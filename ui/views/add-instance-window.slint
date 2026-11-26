@@ -1,0 +1,751 @@
+import { ListView, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Strings } from "../strings.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { CrabDropdown, DropdownOption } from "../components/dropdown.slint";
+import { NavigationItem } from "../components/navigation-item.slint";
+
+export struct VersionItem {
+    id: string,
+    version-type: string,
+    release-date: string,
+    is-snapshot: bool,
+    recommended: bool,
+}
+
+export struct AddLoaderVersionItem {
+    version: string,
+    status-label: string,
+    recommended: bool,
+    stable: bool,
+}
+
+export component AddInstanceWindow inherits Window {
+    title: Strings.add-window-title;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 780px;
+    preferred-height: 660px;
+    min-width: 640px;
+    min-height: 540px;
+    background: Theme.bg-primary;
+
+    // Fonte ativa na sidebar (0 = Custom; preparado para futuras fontes)
+    in-out property <int> active-source: 0;
+
+    // Instance Information
+    in-out property <string> instance-name: "";
+    in-out property <bool> user-edited-name: false;
+    in property <[DropdownOption]> group-options: [];
+    in-out property <string> selected-group-id: "";
+    in-out property <string> selected-group-label: "Ungrouped";
+    callback group-selected(string);
+    in-out property <string> selected-icon-key: "";
+    in property <image> selected-icon-preview;
+    in property <bool> has-selected-icon: false;
+
+    // Minecraft Version
+    in-out property <string> search-query: "";
+    in-out property <bool> show-releases: true;
+    in-out property <bool> show-snapshots: false;
+    in-out property <bool> show-betas: false;
+    in-out property <bool> show-alphas: false;
+    in property <[VersionItem]> versions: [];
+    in-out property <string> selected-version-id: "";
+    in property <bool> is-loading: false;
+    in property <bool> is-creating: false;
+    in property <string> notice-message: "";
+    in property <string> error-message: "";
+
+    // Modloader Selection (0=Vanilla, 1=Fabric, 2=Forge, 3=NeoForge)
+    in-out property <int> selected-modloader: 0;
+    in-out property <string> loader-search-query: "";
+    in property <[AddLoaderVersionItem]> loader-versions: [];
+    in-out property <string> selected-loader-version: "";
+    in property <bool> loader-loading: false;
+    in property <string> loader-status-text: "";
+
+    callback change-icon-clicked();
+    callback filters-changed();
+    callback version-selected(string);
+    callback modloader-changed(int);
+    callback loader-search-changed();
+    callback loader-version-selected(string);
+    callback refresh-versions();
+    callback create-clicked();
+    callback cancel-clicked();
+
+    private property <string> modloader-name:
+        root.selected-modloader == 1 ? "Fabric"
+        : root.selected-modloader == 2 ? "Forge"
+        : root.selected-modloader == 3 ? "NeoForge"
+        : root.selected-modloader == 4 ? "Quilt"
+        : root.selected-modloader == 5 ? "LiteLoader"
+        : "Vanilla";
+
+    private property <bool> can-create:
+        !root.is-creating
+        && root.instance-name != ""
+        && root.selected-version-id != ""
+        && (root.selected-modloader == 0 || (!root.loader-loading && root.selected-loader-version != ""));
+
+    VerticalLayout {
+        padding: Theme.space-md;
+        spacing: Theme.space-md;
+
+        // 1. Top Section: Preview do ícone à esquerda + Instance Name à direita
+        HorizontalLayout {
+            spacing: Theme.space-md;
+
+            Rectangle {
+                width: 64px;
+                height: 64px;
+                border-radius: Theme.radius-sm;
+                background: icon-touch.has-hover ? Theme.bg-interactive : Theme.bg-secondary;
+                border-width: 1px;
+                border-color: icon-touch.has-hover ? Theme.accent : Theme.border;
+
+                icon-touch := TouchArea {
+                    enabled: !root.is-creating;
+                    mouse-cursor: pointer;
+                    clicked => { root.change-icon-clicked(); }
+                }
+
+                if !root.has-selected-icon: Image {
+                    x: 10px;
+                    y: 10px;
+                    width: 44px;
+                    height: 44px;
+                    source: @image-url("../../assets/icons/cube.svg");
+                    colorize: Theme.accent;
+                }
+
+                if root.has-selected-icon: Image {
+                    x: 6px;
+                    y: 6px;
+                    width: 52px;
+                    height: 52px;
+                    source: root.selected-icon-preview;
+                    image-fit: contain;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 4px;
+
+                Text {
+                    text: Strings.instance-name-label;
+                    font-size: Theme.font-sm;
+                    font-weight: 600;
+                    color: Theme.text-secondary;
+                }
+
+                CrabTextInput {
+                    text <=> root.instance-name;
+                    placeholder: Strings.instance-name-placeholder;
+                    enabled: !root.is-creating;
+                    edited => {
+                        root.user-edited-name = root.instance-name != "";
+                    }
+                    accepted => {
+                        if (root.can-create) {
+                            root.create-clicked();
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.space-sm;
+                    Text {
+                        text: "Group:";
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+                    CrabDropdown {
+                        horizontal-stretch: 1;
+                        height: Theme.button-height;
+                        options: root.group-options;
+                        selected-id <=> root.selected-group-id;
+                        selected-label: root.selected-group-label;
+                        selected(gid) => { root.group-selected(gid); }
+                    }
+                }
+            }
+        }
+
+        // 2. Corpo: Sidebar compacta à esquerda + área principal Custom à direita
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: Theme.space-md;
+
+            // Sidebar compacta (inspirada no Prism Launcher)
+            Rectangle {
+                width: 128px;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                VerticalLayout {
+                    padding: Theme.space-xs;
+                    spacing: 2px;
+
+                    NavigationItem {
+                        label: "Custom";
+                        icon: @image-url("../../assets/icons/cube.svg");
+                        selected: root.active-source == 0;
+                        clicked => { root.active-source = 0; }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // Área principal: Custom
+            VerticalLayout {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                spacing: Theme.space-md;
+
+                if root.notice-message != "": Rectangle {
+                    height: 28px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.warning-bg;
+                    border-width: 1px;
+                    border-color: Theme.warning-border;
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-sm;
+                        padding-right: Theme.space-sm;
+                        Text {
+                            text: root.notice-message;
+                            font-size: Theme.font-xs;
+                            color: Theme.warning-text;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                // 2A. Minecraft Version (Tabela + Pesquisa à esquerda | Filter + Refresh à direita)
+                VerticalLayout {
+                    vertical-stretch: 1;
+                    spacing: Theme.space-xs;
+
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text {
+                            text: "Minecraft Version";
+                            font-size: Theme.font-sm;
+                            font-weight: 600;
+                            color: Theme.text-secondary;
+                        }
+                        if root.selected-version-id != "": Text {
+                            text: "Selected: " + root.selected-version-id;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            color: Theme.accent;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        // Esquerda: Tabela + campo de pesquisa abaixo
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            spacing: Theme.space-xs;
+
+                            Rectangle {
+                                vertical-stretch: 1;
+                                horizontal-stretch: 1;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-secondary;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                clip: true;
+
+                                VerticalLayout {
+                                    Rectangle {
+                                        height: 26px;
+                                        background: Theme.bg-interactive;
+
+                                        HorizontalLayout {
+                                            padding-left: Theme.space-md;
+                                            padding-right: Theme.space-md;
+                                            spacing: Theme.space-sm;
+
+                                            Text {
+                                                text: Strings.col-version;
+                                                font-size: Theme.font-xs;
+                                                font-weight: 600;
+                                                color: Theme.text-secondary;
+                                                horizontal-stretch: 2;
+                                                vertical-alignment: center;
+                                            }
+
+                                            Text {
+                                                text: Strings.col-released;
+                                                font-size: Theme.font-xs;
+                                                font-weight: 600;
+                                                color: Theme.text-secondary;
+                                                width: 88px;
+                                                vertical-alignment: center;
+                                            }
+
+                                            Text {
+                                                text: Strings.col-type;
+                                                font-size: Theme.font-xs;
+                                                font-weight: 600;
+                                                color: Theme.text-secondary;
+                                                width: 72px;
+                                                horizontal-alignment: right;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            y: parent.height - 1px;
+                                            height: 1px;
+                                            width: parent.width;
+                                            background: Theme.border;
+                                        }
+                                    }
+
+                                    if root.is-loading: Rectangle {
+                                        vertical-stretch: 1;
+                                        Text {
+                                            text: Strings.loading-versions;
+                                            font-size: Theme.font-sm;
+                                            color: Theme.text-secondary;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    if !root.is-loading && root.versions.length == 0: Rectangle {
+                                        vertical-stretch: 1;
+                                        Text {
+                                            text: Strings.no-versions-match;
+                                            font-size: Theme.font-sm;
+                                            color: Theme.text-secondary;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    if !root.is-loading && root.versions.length > 0: ListView {
+                                        vertical-stretch: 1;
+
+                                        for ver in root.versions: Rectangle {
+                                            height: 28px;
+                                            background: ver.id == root.selected-version-id
+                                                ? Theme.accent-muted
+                                                : row-touch.has-hover
+                                                    ? Theme.bg-interactive
+                                                    : transparent;
+
+                                            if ver.id == root.selected-version-id: Rectangle {
+                                                x: 0px;
+                                                y: 0px;
+                                                width: 3px;
+                                                height: parent.height;
+                                                background: Theme.accent;
+                                            }
+
+                                            row-touch := TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => {
+                                                    root.selected-version-id = ver.id;
+                                                    if (!root.user-edited-name) {
+                                                        root.instance-name = ver.id;
+                                                    }
+                                                    root.version-selected(ver.id);
+                                                }
+                                            }
+
+                                            HorizontalLayout {
+                                                padding-left: Theme.space-md;
+                                                padding-right: Theme.space-md;
+                                                spacing: Theme.space-sm;
+
+                                                HorizontalLayout {
+                                                    horizontal-stretch: 2;
+                                                    spacing: 5px;
+                                                    alignment: start;
+
+                                                    if ver.recommended: VerticalLayout {
+                                                        alignment: center;
+                                                        Image {
+                                                            source: @image-url("../../assets/icons/star.svg");
+                                                            width: 12px;
+                                                            height: 12px;
+                                                            colorize: Theme.accent;
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        text: ver.id;
+                                                        font-size: Theme.font-sm;
+                                                        font-weight: ver.id == root.selected-version-id ? 600 : 400;
+                                                        color: ver.id == root.selected-version-id ? Theme.accent : Theme.text-primary;
+                                                        vertical-alignment: center;
+                                                        overflow: elide;
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: ver.release-date;
+                                                    font-size: Theme.font-xs;
+                                                    color: Theme.text-secondary;
+                                                    width: 88px;
+                                                    vertical-alignment: center;
+                                                }
+
+                                                Text {
+                                                    text: ver.version-type;
+                                                    font-size: Theme.font-xs;
+                                                    color: ver.is-snapshot ? Theme.warning-text : Theme.text-secondary;
+                                                    width: 72px;
+                                                    horizontal-alignment: right;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                y: parent.height - 1px;
+                                                height: 1px;
+                                                width: parent.width;
+                                                background: Theme.border-subtle;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            CrabTextInput {
+                                text <=> root.search-query;
+                                placeholder: Strings.search-placeholder;
+                                leading-icon: @image-url("../../assets/icons/search.svg");
+                                has-leading-icon: true;
+                                edited => { root.filters-changed(); }
+                            }
+                        }
+
+                        // Direita: Filter + Refresh
+                        Rectangle {
+                            width: 132px;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+
+                            VerticalLayout {
+                                padding: Theme.space-sm;
+                                spacing: Theme.space-xs;
+
+                                Text {
+                                    text: "Filter";
+                                    font-size: Theme.font-xs;
+                                    font-weight: 600;
+                                    color: Theme.text-secondary;
+                                }
+
+                                CrabCheckbox {
+                                    label: Strings.filter-releases;
+                                    checked <=> root.show-releases;
+                                    toggled => { root.filters-changed(); }
+                                }
+
+                                CrabCheckbox {
+                                    label: Strings.filter-snapshots;
+                                    checked <=> root.show-snapshots;
+                                    toggled => { root.filters-changed(); }
+                                }
+
+                                CrabCheckbox {
+                                    label: "Betas";
+                                    checked <=> root.show-betas;
+                                    toggled => { root.filters-changed(); }
+                                }
+
+                                CrabCheckbox {
+                                    label: "Alphas";
+                                    checked <=> root.show-alphas;
+                                    toggled => { root.filters-changed(); }
+                                }
+
+                                Rectangle { vertical-stretch: 1; }
+
+                                CrabButton {
+                                    text: "Refresh";
+                                    icon: @image-url("../../assets/icons/refresh.svg");
+                                    has-icon: true;
+                                    variant: "secondary";
+                                    enabled: !root.is-loading;
+                                    clicked => { root.refresh-versions(); }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2B. Modloader Selection (Lista exclusiva à esquerda + tabela de versões à direita)
+                VerticalLayout {
+                    height: 172px;
+                    spacing: Theme.space-xs;
+
+                    Text {
+                        text: "Modloader";
+                        font-size: Theme.font-sm;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                    }
+
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        // Esquerda: Vanilla / Fabric / Forge / NeoForge / Quilt / LiteLoader (com ScrollView para nunca sobrepor o rodapé)
+                        Rectangle {
+                            width: 152px;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            ScrollView {
+                                width: parent.width;
+                                height: parent.height;
+
+                                VerticalLayout {
+                                    padding: 4px;
+                                    spacing: 2px;
+
+                                    for ml in [
+                                        { idx: 0, label: "Vanilla", icon: @image-url("../../assets/modloaders/vanilla.svg") },
+                                        { idx: 1, label: "Fabric", icon: @image-url("../../assets/modloaders/fabric.png") },
+                                        { idx: 2, label: "Forge", icon: @image-url("../../assets/modloaders/forge.jpg") },
+                                        { idx: 3, label: "NeoForge", icon: @image-url("../../assets/modloaders/neoforge.png") },
+                                        { idx: 4, label: "Quilt", icon: @image-url("../../assets/modloaders/quilt.png") },
+                                        { idx: 5, label: "LiteLoader", icon: @image-url("../../assets/modloaders/liteloader.png") },
+                                    ]: Rectangle {
+                                        height: 30px;
+                                        border-radius: Theme.radius-sm;
+                                        border-width: root.selected-modloader == ml.idx ? 1px : 0px;
+                                        background: root.selected-modloader == ml.idx
+                                            ? Theme.accent-muted
+                                            : ml-touch.has-hover ? Theme.bg-interactive-hover : transparent;
+                                        border-color: Theme.accent;
+
+                                        ml-touch := TouchArea {
+                                            enabled: !root.is-creating;
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                root.selected-modloader = ml.idx;
+                                                root.modloader-changed(ml.idx);
+                                            }
+                                        }
+
+                                        HorizontalLayout {
+                                            padding-left: Theme.space-sm;
+                                            padding-right: Theme.space-sm;
+                                            spacing: 8px;
+
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Image {
+                                                    source: ml.icon;
+                                                    width: 16px;
+                                                    height: 16px;
+                                                    image-fit: contain;
+                                                }
+                                            }
+
+                                            Text {
+                                                text: ml.label;
+                                                font-size: Theme.font-sm;
+                                                font-weight: root.selected-modloader == ml.idx ? 600 : 500;
+                                                color: root.selected-modloader == ml.idx ? Theme.accent : Theme.text-primary;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Direita: Tabela de versões do modloader selecionado
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            spacing: 4px;
+
+                            Rectangle {
+                                vertical-stretch: 1;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-secondary;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                clip: true;
+
+                                if root.selected-modloader == 0: Text {
+                                    text: "Vanilla Minecraft — no modloader will be installed.";
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                if root.selected-modloader != 0 && root.loader-loading: Text {
+                                    text: root.loader-status-text != "" ? root.loader-status-text : "Loading loader versions...";
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                if root.selected-modloader != 0 && !root.loader-loading && root.loader-versions.length == 0: Text {
+                                    text: root.loader-status-text != "" ? root.loader-status-text : "No compatible versions available.";
+                                    font-size: Theme.font-sm;
+                                    color: Theme.warning-text;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                if root.selected-modloader != 0 && !root.loader-loading && root.loader-versions.length > 0: ListView {
+                                    for lv in root.loader-versions: Rectangle {
+                                        height: 28px;
+                                        background: lv.version == root.selected-loader-version
+                                            ? Theme.accent-muted
+                                            : lv-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                        lv-touch := TouchArea {
+                                            enabled: !root.is-creating;
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                root.selected-loader-version = lv.version;
+                                                root.loader-version-selected(lv.version);
+                                            }
+                                        }
+
+                                        HorizontalLayout {
+                                            padding-left: Theme.space-md;
+                                            padding-right: Theme.space-md;
+                                            spacing: Theme.space-sm;
+
+                                            Text {
+                                                text: lv.version;
+                                                font-size: Theme.font-sm;
+                                                font-weight: lv.version == root.selected-loader-version ? 600 : 400;
+                                                color: lv.version == root.selected-loader-version ? Theme.accent : Theme.text-primary;
+                                                horizontal-stretch: 1;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+
+                                            if lv.recommended: VerticalLayout {
+                                                alignment: center;
+                                                Image {
+                                                    source: @image-url("../../assets/icons/star.svg");
+                                                    width: 12px;
+                                                    height: 12px;
+                                                    colorize: Theme.accent;
+                                                }
+                                            }
+
+                                            if lv.status-label != "": Text {
+                                                text: lv.status-label;
+                                                font-size: Theme.font-xs;
+                                                font-weight: lv.recommended ? 600 : 400;
+                                                color: lv.recommended
+                                                    ? Theme.accent
+                                                    : lv.stable ? Theme.text-secondary : Theme.warning-text;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.selected-modloader != 0 && root.loader-versions.length > 0: CrabTextInput {
+                                text <=> root.loader-search-query;
+                                placeholder: "Filter loader versions...";
+                                leading-icon: @image-url("../../assets/icons/search.svg");
+                                has-leading-icon: true;
+                                edited => { root.loader-search-changed(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.error-message != "": Rectangle {
+            height: 30px;
+            border-radius: Theme.radius-sm;
+            background: Theme.error-bg;
+            border-width: 1px;
+            border-color: Theme.error-border;
+
+            HorizontalLayout {
+                padding-left: Theme.space-sm;
+                padding-right: Theme.space-sm;
+                Text {
+                    text: root.error-message;
+                    font-size: Theme.font-xs;
+                    color: Theme.error-text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // 3. Footer
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            Text {
+                text: root.selected-version-id != ""
+                    ? (root.selected-modloader == 0
+                        ? "Minecraft " + root.selected-version-id + " • Vanilla"
+                        : "Minecraft " + root.selected-version-id + " • " + root.modloader-name
+                            + (root.selected-loader-version != "" ? " " + root.selected-loader-version : ""))
+                    : "Select a Minecraft version";
+                font-size: Theme.font-xs;
+                font-weight: 500;
+                color: Theme.text-secondary;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            CrabButton {
+                text: Strings.cancel;
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                enabled: !root.is-creating;
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Create Instance";
+                icon: @image-url("../../assets/icons/plus.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.can-create;
+                clicked => { root.create-clicked(); }
+            }
+        }
+    }
+}

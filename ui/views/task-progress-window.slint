@@ -1,0 +1,392 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+
+export struct DownloadTaskRow {
+    id: string,
+    name: string,
+    provider: string,
+    icon: image,
+    has-icon: bool,
+    progress: float, // 0.0..=1.0
+    status: string,
+    bytes-text: string,
+}
+
+/// Janela independente e reutilizável de progresso de instalação e inicialização do Crab.
+/// Exibe etapa atual, progresso geral com porcentagem, tarefa atual com animação indeterminada real,
+/// métricas de download (velocidade/bytes/arquivos) e controles funcionais de Pause/Resume e Abort.
+export component TaskProgressWindow inherits Window {
+    title: "Please wait... — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 560px;
+    preferred-height: root.download-items.length > 0 ? 380px : 244px;
+    min-width: 460px;
+    min-height: 228px;
+    background: Theme.bg-primary;
+
+    in property <string> task-title: "Downloading game files";
+    in property <string> task-stage: "Preparing...";
+    in property <string> step-text: "Executing task 1 of 1";
+    in property <string> task-state: "Running";
+    in property <string> task-kind: "minecraft"; // minecraft, modloader, java, launch, repair
+    in property <float> overall-progress: 0.0; // 0.0..=1.0
+    in property <string> overall-percent-text: "0%";
+    in property <float> progress: 0.0; // 0.0..=1.0
+    in property <bool> indeterminate: false;
+    in property <string> percent-text: "0%";
+    in property <string> bytes-text: "";
+    in property <string> speed-text: "";
+    in property <string> eta-text: "";
+    in property <string> files-text: "";
+    in property <string> current-file: "";
+    in property <string> elapsed-text: "0s";
+    in property <string> details-text: "";
+    in property <string> error-message: "";
+    in property <[DownloadTaskRow]> download-items: [];
+    in property <int> completed-count: 0;
+    in property <int> total-count: 0;
+
+    in property <bool> can-pause: true;
+    in property <bool> is-paused: false;
+    in property <bool> is-pausing: false;
+    in property <bool> is-cancelling: false;
+    in property <bool> is-finished: false;
+
+    callback pause-clicked();
+    callback resume-clicked();
+    callback abort-confirmed();
+    callback hide-clicked();
+
+    // Fase animada contínua (0.0..1.0) apenas quando a barra está em modo indeterminado e em execução
+    private property <float> anim-phase: root.indeterminate && !root.is-paused && !root.is-finished
+        ? (mod(animation-tick() / 1ms, 1400) / 1400.0)
+        : 0.0;
+
+    FocusScope {
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape && root.is-finished) {
+                root.hide-clicked();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: Theme.space-lg;
+            spacing: Theme.space-md;
+
+            // Linha superior: Etapa atual (esquerda) + Operação principal (direita)
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.step-text;
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.total-count > 0
+                        ? root.completed-count + " / " + root.total-count + " completed"
+                        : root.task-title;
+                    font-size: Theme.font-sm;
+                    font-weight: 500;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+            // Barra de progresso geral com porcentagem centralizada
+            Rectangle {
+                height: 22px;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+                clip: true;
+
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width * max(0.0, min(1.0, root.overall-progress));
+                    height: parent.height;
+                    background: root.error-message != ""
+                        ? Theme.danger
+                        : root.is-paused
+                            ? Theme.warning-text
+                            : Theme.accent;
+                }
+
+                Text {
+                    text: root.overall-percent-text;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Contêiner central rolável com progresso individual de cada download ativo
+            if root.download-items.length > 0: Rectangle {
+                vertical-stretch: 1;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+                clip: true;
+
+                ListView {
+                    width: parent.width;
+                    height: parent.height;
+
+                    for item in root.download-items: Rectangle {
+                        height: item.bytes-text != "" ? 58px : 48px;
+
+                        HorizontalLayout {
+                            padding-left: Theme.space-sm;
+                            padding-right: Theme.space-sm;
+                            spacing: Theme.space-sm;
+
+                            VerticalLayout {
+                                width: 28px;
+                                alignment: center;
+                                if item.has-icon: Image {
+                                    source: item.icon;
+                                    width: 24px;
+                                    height: 24px;
+                                    image-fit: cover;
+                                }
+                                if !item.has-icon: Image {
+                                    source: item.provider == "Modrinth"
+                                        ? @image-url("../../assets/providers/modrinth.svg")
+                                        : item.provider == "CurseForge"
+                                            ? @image-url("../../assets/providers/curseforge.svg")
+                                            : @image-url("../../assets/icons/download.svg");
+                                    width: 20px;
+                                    height: 20px;
+                                    image-fit: contain;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 4px;
+
+                                HorizontalLayout {
+                                    spacing: Theme.space-sm;
+                                    Text {
+                                        text: item.name;
+                                        font-size: Theme.font-sm;
+                                        font-weight: 500;
+                                        color: Theme.text-primary;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: item.status != ""
+                                            ? item.status
+                                            : Math.round(max(0.0, min(1.0, item.progress)) * 100) + "%";
+                                        font-size: Theme.font-xs;
+                                        font-weight: 600;
+                                        color: Theme.text-secondary;
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: Theme.bg-primary;
+                                    clip: true;
+
+                                    Rectangle {
+                                        x: 0px;
+                                        y: 0px;
+                                        width: parent.width * max(0.0, min(1.0, item.progress));
+                                        height: parent.height;
+                                        border-radius: 3px;
+                                        background: item.status == "Failed"
+                                            ? Theme.danger
+                                            : item.progress >= 1.0 ? Theme.success : Theme.accent;
+                                    }
+                                }
+
+                                if item.bytes-text != "": Text {
+                                    text: item.bytes-text;
+                                    font-size: 10px;
+                                    color: Theme.text-secondary;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            y: parent.height - 1px;
+                            height: 1px;
+                            width: parent.width;
+                            background: Theme.border-subtle;
+                        }
+                    }
+                }
+            }
+
+            // Cartão interno da tarefa atual (operações de tarefa única: Minecraft, Java, Modloader, Launch)
+            if root.download-items.length == 0: Rectangle {
+                vertical-stretch: 1;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: root.error-message != "" ? Theme.error-border : Theme.border;
+
+                VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+                    alignment: start;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+
+                        Text {
+                            text: root.error-message != "" ? root.error-message : root.task-stage;
+                            font-size: Theme.font-sm;
+                            font-weight: 500;
+                            color: root.error-message != "" ? Theme.error-text : Theme.text-primary;
+                            horizontal-stretch: 1;
+                            wrap: root.error-message != "" ? word-wrap : no-wrap;
+                            overflow: elide;
+                        }
+
+                        if root.error-message == "": Text {
+                            text: root.is-paused
+                                ? "Paused"
+                                : root.indeterminate
+                                    ? root.task-state
+                                    : root.percent-text;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            color: root.is-paused ? Theme.warning-text : Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if root.error-message == "": Rectangle {
+                        height: 22px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-primary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        if !root.indeterminate: Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width * max(0.0, min(1.0, root.progress));
+                            height: parent.height;
+                            background: root.is-paused ? Theme.warning-text : Theme.accent;
+                        }
+
+                        if root.indeterminate: Rectangle {
+                            x: -parent.width * 0.32 + (parent.width * 1.32) * root.anim-phase;
+                            y: 0px;
+                            width: parent.width * 0.32;
+                            height: parent.height;
+                            border-radius: 3px;
+                            background: root.is-paused ? Theme.warning-text : Theme.accent;
+                        }
+
+                        Text {
+                            text: root.indeterminate
+                                ? (root.is-paused ? "Paused" : root.task-state)
+                                : root.percent-text;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if root.error-message == "" && (root.bytes-text != "" || root.speed-text != "" || root.files-text != "" || root.eta-text != ""): HorizontalLayout {
+                        spacing: Theme.space-md;
+
+                        if root.bytes-text != "": Text {
+                            text: root.bytes-text;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+                        if root.speed-text != "": Text {
+                            text: root.speed-text;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+                        if root.files-text != "": Text {
+                            text: root.files-text;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+                        if root.eta-text != "": Text {
+                            text: root.eta-text;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+            }
+
+            // Rodapé com informações de progresso + controles Pause/Resume e Abort (ou Close em caso de erro/cancelamento)
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.total-count > 0
+                        ? root.completed-count + " / " + root.total-count + " completed"
+                        : (root.elapsed-text != "" ? "Elapsed: " + root.elapsed-text : "");
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if !root.is-finished && root.can-pause && !root.is-paused: CrabButton {
+                    text: "Pause";
+                    variant: "secondary";
+                    enabled: !root.is-cancelling;
+                    clicked => { root.pause-clicked(); }
+                }
+
+                if !root.is-finished && root.can-pause && root.is-paused: CrabButton {
+                    text: "Resume";
+                    variant: "primary";
+                    enabled: !root.is-cancelling;
+                    clicked => { root.resume-clicked(); }
+                }
+
+                if !root.is-finished: CrabButton {
+                    text: root.is-cancelling ? "Aborting..." : "Abort";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "danger";
+                    enabled: !root.is-cancelling;
+                    clicked => { root.abort-confirmed(); }
+                }
+
+                if root.is-finished: CrabButton {
+                    text: "Close";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    clicked => { root.hide-clicked(); }
+                }
+            }
+        }
+    }
+}

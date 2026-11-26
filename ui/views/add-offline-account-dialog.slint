@@ -1,0 +1,105 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela nativa dedicada para criação de contas Offline (usada pela Toolbar e por Settings -> Accounts).
+export component AddOfflineAccountWindow inherits Window {
+    title: "Add Offline Account — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 390px;
+    preferred-height: 184px;
+    min-width: 350px;
+    min-height: 176px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> username: "";
+    in-out property <string> error-message: "";
+
+    callback cancel-clicked();
+    callback create-clicked(string);
+
+    public function focus-username() {
+        username-field.focus-and-select-all();
+    }
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Add Offline Account";
+        subtitle: "Play locally without a Microsoft account.";
+        escape-pressed => { root.cancel-clicked(); }
+
+        HorizontalLayout {
+            spacing: Theme.space-md;
+
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-primary;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                Image {
+                    source: @image-url("../../assets/icons/steve-head.svg");
+                    width: 34px;
+                    height: 34px;
+                    x: 5px;
+                    y: 5px;
+                    image-rendering: pixelated;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+
+                username-field := CrabTextInput {
+                    text <=> root.username;
+                    placeholder: "Username (3–16 chars, A-Z, 0-9, _)";
+                    accepted(val) => {
+                        if (val != "") {
+                            root.create-clicked(val);
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.error-message != "": Text {
+            text: root.error-message;
+            font-size: Theme.font-xs;
+            color: Theme.error-text;
+            overflow: elide;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Add Account";
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.username != "";
+                clicked => { root.create-clicked(root.username); }
+            }
+        }
+    }
+}

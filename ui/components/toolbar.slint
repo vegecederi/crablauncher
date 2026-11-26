@@ -1,0 +1,284 @@
+import { Theme } from "../theme.slint";
+import { Strings } from "../strings.slint";
+import { CrabButton } from "button.slint";
+import { CrabTextInput } from "input.slint";
+import { ChevronIcon } from "chevron.slint";
+
+/// Toolbar unificada do Crab Launcher (utilizada identicamente na posição superior e inferior).
+export component CrabToolbar inherits Rectangle {
+    in property <string> toolbar-position: "top"; // "top" | "bottom"
+    in property <bool> show-toolbar-labels: true;
+    in property <bool> compact-toolbar: false;
+    in property <bool> search-visible: true;
+    in-out property <string> instance-search-query: "";
+    in property <bool> has-active-account: false;
+    in property <string> active-account-name: "";
+    in property <bool> customize-layout-mode: false;
+    in property <bool> temp-reveal-search: false;
+    in property <length> blur-offset-y: 0px;
+    in property <length> window-width: 1000px;
+    in property <length> window-height: 660px;
+
+    callback add-instance-clicked();
+    callback folders-toggled(length, length, length, length);   // x, y, w, h
+    callback create-group-clicked();
+    callback settings-clicked();
+    callback accounts-toggled(length, length, length, length);  // x, y, w, h
+    callback search-changed(string);
+    callback clear-search-clicked();
+    callback toolbar-right-clicked(length, length);
+    callback drag-started();
+    callback drag-moved(length);
+    callback drag-ended();
+
+    private property <length> btn-height: root.compact-toolbar ? 24px : Theme.toolbar-button-height;
+
+    height: root.compact-toolbar ? 34px : Theme.toolbar-height;
+    background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
+    clip: true;
+
+    // Real Gaussian backdrop blur para o tema especial Vice
+    if Theme.is-vice-theme: Image {
+        x: 0px;
+        y: -root.blur-offset-y;
+        width: root.window-width;
+        height: root.window-height;
+        source: @image-url("../../assets/themes/vice/wallpaper-blurred.png");
+        image-fit: cover;
+    }
+    if Theme.is-vice-theme: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #30253894;
+    }
+
+    // Divisor sutil na borda voltada para o conteúdo
+    Rectangle {
+        y: root.toolbar-position == "bottom" ? 0px : parent.height - 1px;
+        height: 1px;
+        width: parent.width;
+        background: Theme.border;
+    }
+
+    // Área de clique direito no fundo da toolbar
+    TouchArea {
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                root.toolbar-right-clicked(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        spacing: root.compact-toolbar ? 4px : Theme.space-xs;
+
+        // Handle de arraste no modo Customize Layout
+        if root.customize-layout-mode: Rectangle {
+            width: 24px;
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            border-radius: Theme.radius-sm;
+            background: Theme.accent;
+
+            TouchArea {
+                mouse-cursor: grab;
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                        root.drag-started();
+                    } else if (ev.kind == PointerEventKind.up && ev.button == PointerEventButton.left) {
+                        root.drag-ended();
+                    }
+                }
+                moved => {
+                    root.drag-moved(self.absolute-position.y + self.mouse-y);
+                }
+            }
+
+            Text {
+                text: "⋮⋮";
+                font-size: 11px;
+                font-weight: 600;
+                color: Theme.text-on-accent;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        CrabButton {
+            text: root.show-toolbar-labels ? Strings.add-instance : "";
+            icon: @image-url("../../assets/icons/plus.svg");
+            has-icon: true;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            clicked => {
+                if (!root.customize-layout-mode) {
+                    root.add-instance-clicked();
+                }
+            }
+            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
+        }
+
+        folders-btn := CrabButton {
+            text: root.show-toolbar-labels ? "Folders" : "";
+            icon: @image-url("../../assets/icons/folder.svg");
+            has-icon: true;
+            show-chevron: root.show-toolbar-labels;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            clicked => {
+                if (!root.customize-layout-mode) {
+                    root.folders-toggled(
+                        self.absolute-position.x,
+                        self.absolute-position.y,
+                        self.width,
+                        self.height
+                    );
+                }
+            }
+            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
+        }
+
+        CrabButton {
+            text: root.show-toolbar-labels ? "Create Group" : "";
+            icon: @image-url("../../assets/icons/folder-plus.svg");
+            has-icon: true;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            clicked => {
+                if (!root.customize-layout-mode) {
+                    root.create-group-clicked();
+                }
+            }
+            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
+        }
+
+        CrabButton {
+            text: root.show-toolbar-labels ? Strings.settings : "";
+            icon: @image-url("../../assets/icons/settings.svg");
+            has-icon: true;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            clicked => {
+                if (!root.customize-layout-mode) {
+                    root.settings-clicked();
+                }
+            }
+            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+
+        // Pesquisa compacta de instâncias
+        CrabTextInput {
+            visible: root.search-visible;
+            width: root.search-visible ? 210px : 0px;
+            height: root.compact-toolbar ? 24px : 28px;
+            y: (parent.height - self.height) / 2;
+            text <=> root.instance-search-query;
+            placeholder: "Search instances...";
+            leading-icon: @image-url("../../assets/icons/search.svg");
+            has-leading-icon: true;
+            edited(q) => { root.search-changed(q); }
+        }
+
+        if root.search-visible && root.instance-search-query != "": CrabButton {
+            text: "";
+            icon: @image-url("../../assets/icons/x.svg");
+            has-icon: true;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            clicked => { root.clear-search-clicked(); }
+        }
+
+        // Seletor de contas (sem conta ativa)
+        if !root.has-active-account: CrabButton {
+            text: root.show-toolbar-labels ? Strings.accounts : "";
+            icon: @image-url("../../assets/icons/user.svg");
+            has-icon: true;
+            show-chevron: root.show-toolbar-labels;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            clicked => {
+                if (!root.customize-layout-mode) {
+                    root.accounts-toggled(
+                        self.absolute-position.x,
+                        self.absolute-position.y,
+                        self.width,
+                        self.height
+                    );
+                }
+            }
+            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
+        }
+
+        // Seletor de contas (com conta ativa — avatar + username + chevron)
+        if root.has-active-account: acc-btn := Rectangle {
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            border-radius: Theme.radius-sm;
+            background: acc-touch.pressed
+                ? Theme.bg-interactive-pressed
+                : acc-touch.has-hover
+                    ? Theme.bg-interactive-hover
+                    : transparent;
+
+            acc-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if (!root.customize-layout-mode) {
+                        root.accounts-toggled(
+                            acc-btn.absolute-position.x,
+                            acc-btn.absolute-position.y,
+                            acc-btn.width,
+                            acc-btn.height
+                        );
+                    }
+                }
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                        root.toolbar-right-clicked(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-sm;
+                padding-right: Theme.space-sm;
+                spacing: 8px;
+
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../../assets/icons/steve-head.svg");
+                        width: root.compact-toolbar ? 18px : 22px;
+                        height: root.compact-toolbar ? 18px : 22px;
+                        image-rendering: pixelated;
+                    }
+                }
+
+                if root.show-toolbar-labels: Text {
+                    text: root.active-account-name;
+                    font-size: Theme.font-md;
+                    font-weight: 500;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                }
+
+                if root.show-toolbar-labels: ChevronIcon {
+                    direction: "down";
+                    icon-size: 13px;
+                }
+            }
+        }
+    }
+}

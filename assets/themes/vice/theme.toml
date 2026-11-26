@@ -1,0 +1,32 @@
+schema_version = 1
+
+[metadata]
+id = "vice"
+name = "Vice"
+author = "Crab Team"
+version = "1.0.0"
+description = "Special tropical sunset theme inspired by Vice City, with translucent surfaces and wallpaper."
+
+[colors]
+background = "#191522"
+surface = "#302538"
+surface_elevated = "#3d2f47"
+border = "#543f63"
+border_subtle = "#3f2f4d"
+accent = "#f78da7"
+accent_hover = "#ffaa72"
+accent_pressed = "#e06d8c"
+accent_muted = "#f78da72e"
+accent_foreground = "#191522"
+text_primary = "#fff1e8"
+text_secondary = "#b49ad9"
+text_disabled = "#7e6899"
+hover = "#463554"
+pressed = "#281e30"
+danger = "#ff5c7c"
+success = "#6ee7b7"
+warning = "#ffaa72"
+console_bg = "#14101c"
+
+[geometry]
+border_radius = 6

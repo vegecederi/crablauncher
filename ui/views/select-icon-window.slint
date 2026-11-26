@@ -1,0 +1,288 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabContextMenu, ContextMenuItem } from "../components/context-menu.slint";
+
+export struct SelectableIconItem {
+    key: string,      // "" = default cube icon, otherwise filename in managed icons/
+    label: string,
+    preview: image,
+    is-default: bool,
+}
+
+/// Janela "Select Instance Icon" para escolher, pesquisar, importar, renomear e excluir ícones gerenciados pelo Crab.
+export component SelectIconWindow inherits Window {
+    title: "Select Instance Icon — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 600px;
+    preferred-height: 480px;
+    min-width: 480px;
+    min-height: 380px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-id: "";
+    in property <string> instance-name: "";
+    in-out property <string> search-query: "";
+    in-out property <string> selected-key: "";
+    in property <[SelectableIconItem]> icons: [];
+    in property <string> error-message: "";
+
+    // Context menu para ícones personalizados
+    in-out property <bool> show-icon-context-menu: false;
+    in-out property <string> context-icon-key: "";
+    in-out property <string> context-icon-label: "";
+    in-out property <length> context-x: 0px;
+    in-out property <length> context-y: 0px;
+
+    // Diálogo Rename Icon
+    in-out property <bool> show-rename-dialog: false;
+    in-out property <string> rename-target-key: "";
+    in-out property <string> rename-input: "";
+
+    // Diálogo Delete Icon Confirmation
+    in-out property <bool> show-delete-dialog: false;
+    in-out property <string> delete-target-key: "";
+    in-out property <string> delete-target-label: "";
+    in-out property <int> delete-usage-count: 0;
+
+    callback search-changed(string);
+    callback import-icon-clicked();
+    callback open-icons-folder-clicked();
+    callback request-delete-icon(string, string);
+    callback confirm-delete-icon(string);
+    callback rename-icon-confirmed(string, string);
+    callback request-rename-icon-dialog(string, string);
+    callback request-delete-icon-dialog(string, string, int);
+    callback reset-default-clicked();
+    callback apply-clicked(string);
+    callback cancel-clicked();
+
+    VerticalLayout {
+        // Barra superior: busca + Import + Delete Icon + Icons Folder
+        Rectangle {
+            height: 48px;
+            background: Theme.bg-secondary;
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                CrabTextInput {
+                    horizontal-stretch: 1;
+                    y: (parent.height - self.height) / 2;
+                    text <=> root.search-query;
+                    placeholder: "Search icons...";
+                    leading-icon: @image-url("../../assets/icons/search.svg");
+                    has-leading-icon: true;
+                    edited(q) => { root.search-changed(q); }
+                }
+
+                CrabButton {
+                    text: "Import Icon";
+                    icon: @image-url("../../assets/icons/plus.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.import-icon-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Delete Icon";
+                    icon: @image-url("../../assets/icons/trash.svg");
+                    has-icon: true;
+                    variant: "flat-danger";
+                    enabled: root.selected-key != "";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.request-delete-icon(root.selected-key, root.selected-key);
+                    }
+                }
+
+                CrabButton {
+                    text: "Icons Folder";
+                    icon: @image-url("../../assets/icons/folder.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.open-icons-folder-clicked(); }
+                }
+            }
+
+            Rectangle { y: parent.height - 1px; height: 1px; width: parent.width; background: Theme.border; }
+        }
+
+        // Grade de ícones disponíveis
+        icon-flick := Flickable {
+            vertical-stretch: 1;
+            property <length> cell-w: 96px;
+            property <length> cell-h: 90px;
+            property <length> gap: 8px;
+            property <length> pad: 12px;
+            property <int> columns: max(1, floor((self.width - 2 * self.pad + self.gap) / (self.cell-w + self.gap)));
+            property <int> rows: ceil(root.icons.length / self.columns);
+
+            content-width: self.width;
+            content-height: max(self.height, self.pad * 2 + self.rows * (self.cell-h + self.gap));
+
+            for item[idx] in root.icons: Rectangle {
+                x: icon-flick.pad + mod(idx, icon-flick.columns) * (icon-flick.cell-w + icon-flick.gap);
+                y: icon-flick.pad + floor(idx / icon-flick.columns) * (icon-flick.cell-h + icon-flick.gap);
+                width: icon-flick.cell-w;
+                height: icon-flick.cell-h;
+                border-radius: Theme.radius-sm;
+                border-width: item.key == root.selected-key ? 1px : 0px;
+                border-color: item.key == root.selected-key ? Theme.accent : transparent;
+                background: item.key == root.selected-key
+                    ? Theme.accent-muted
+                    : ic-touch.has-hover ? Theme.bg-secondary : transparent;
+
+                ic-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.show-icon-context-menu = false;
+                        root.selected-key = item.key;
+                    }
+                    double-clicked => {
+                        root.show-icon-context-menu = false;
+                        root.selected-key = item.key;
+                        root.apply-clicked(item.key);
+                    }
+                    pointer-event(ev) => {
+                        if (!item.is-default
+                            && ev.kind == PointerEventKind.down
+                            && ev.button == PointerEventButton.right) {
+                            root.selected-key = item.key;
+                            root.context-icon-key = item.key;
+                            root.context-icon-label = item.label;
+                            root.context-x = max(8px, min(root.width - 170px, self.absolute-position.x + self.mouse-x));
+                            root.context-y = max(52px, min(root.height - 110px, self.absolute-position.y + self.mouse-y));
+                            root.show-icon-context-menu = true;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 4px;
+                    alignment: center;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        if item.is-default: Image {
+                            source: @image-url("../../assets/icons/cube.svg");
+                            width: 44px;
+                            height: 44px;
+                            colorize: Theme.accent;
+                        }
+                        if !item.is-default: Image {
+                            source: item.preview;
+                            width: 44px;
+                            height: 44px;
+                            image-fit: contain;
+                        }
+                    }
+
+                    Text {
+                        text: item.label;
+                        font-size: Theme.font-xs;
+                        color: item.key == root.selected-key ? Theme.accent : Theme.text-primary;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+
+        // Rodapé
+        Rectangle {
+            height: 46px;
+            background: Theme.bg-secondary;
+
+            Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                CrabButton {
+                    text: "Reset to Default";
+                    icon: @image-url("../../assets/icons/refresh.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.selected-key = "";
+                        root.reset-default-clicked();
+                    }
+                }
+
+                Text {
+                    text: root.error-message;
+                    font-size: Theme.font-xs;
+                    color: Theme.error-text;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "Cancel";
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Apply";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.apply-clicked(root.selected-key); }
+                }
+            }
+        }
+    }
+
+    // Menu de contexto para ícones personalizados (desabilitado para ícones oficiais/internos)
+    if root.show-icon-context-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-icon-context-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: root.context-x;
+            y: root.context-y;
+            menu-width: 168px;
+
+            ContextMenuItem {
+                text: "Rename Icon";
+                icon: @image-url("../../assets/icons/edit.svg");
+                clicked => {
+                    root.show-icon-context-menu = false;
+                    root.rename-target-key = root.context-icon-key;
+                    root.rename-input = root.context-icon-label;
+                    root.show-rename-dialog = true;
+                }
+            }
+
+            ContextMenuItem {
+                text: "Delete Icon";
+                icon: @image-url("../../assets/icons/trash.svg");
+                danger: true;
+                clicked => {
+                    root.show-icon-context-menu = false;
+                    root.request-delete-icon(root.context-icon-key, root.context-icon-label);
+                }
+            }
+        }
+    }
+
+}

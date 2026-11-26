@@ -1,0 +1,58 @@
+import { Theme } from "../theme.slint";
+
+/// Item de navegação lateral com ícone 18x18 e texto alinhados verticalmente.
+export component NavigationItem inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> selected: false;
+    in property <bool> preserve-icon-colors: false;
+
+    callback clicked();
+
+    height: 34px;
+    border-radius: Theme.radius-sm;
+    background: root.selected
+        ? Theme.accent-muted
+        : nav-touch.has-hover ? Theme.bg-interactive : transparent;
+    border-width: root.selected ? 1px : 0px;
+    border-color: Theme.accent;
+
+    nav-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        spacing: Theme.space-sm;
+
+        VerticalLayout {
+            alignment: center;
+
+            if !root.preserve-icon-colors: Image {
+                source: root.icon;
+                width: 18px;
+                height: 18px;
+                colorize: root.selected ? Theme.accent : Theme.icon-secondary;
+            }
+
+            if root.preserve-icon-colors: Image {
+                source: root.icon;
+                width: 18px;
+                height: 18px;
+                image-fit: contain;
+            }
+        }
+
+        Text {
+            text: root.label;
+            font-size: Theme.font-md;
+            font-weight: root.selected ? 600 : 400;
+            color: root.selected ? Theme.accent : Theme.text-primary;
+            vertical-alignment: center;
+        }
+    }
+}

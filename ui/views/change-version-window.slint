@@ -1,0 +1,284 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { CrabTextInput } from "../components/input.slint";
+
+export struct ChangeVersionRow {
+    version: string,
+    version-type: string,
+    released: string,
+    is-installed: bool,
+}
+
+/// Seletor universal de versões de componentes (Minecraft, LWJGL, Fabric, Forge, NeoForge).
+/// Selecionar uma linha nunca aplica automaticamente — exige confirmação explícita em Apply.
+export component ChangeVersionWindow inherits Window {
+    title: "Change Version — " + root.component-name;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 560px;
+    preferred-height: 520px;
+    min-width: 480px;
+    min-height: 420px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-id: "";
+    in property <string> component-uid: "";
+    in property <string> component-name: "Minecraft";
+    in property <string> installed-version: "";
+    in property <bool> show-mc-filters: true;
+    in property <bool> show-loader-filter: false;
+
+    in-out property <string> search-query: "";
+    in-out property <bool> filter-releases: true;
+    in-out property <bool> filter-snapshots: false;
+    in-out property <bool> filter-experimental: false;
+
+    in property <[ChangeVersionRow]> rows: [];
+    in-out property <string> selected-version: "";
+    in property <bool> is-loading: false;
+    in property <string> conflict-warning: "";
+    in property <string> error-message: "";
+
+    callback filters-changed();
+    callback refresh-clicked();
+    callback apply-clicked(string, string, string); // (instance_id, component_uid, new_version)
+    callback cancel-clicked();
+
+    FocusScope {
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape) {
+                root.cancel-clicked();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: Theme.space-lg;
+            spacing: Theme.space-sm;
+
+            // Cabeçalho: Componente + Versão instalada
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "Change " + root.component-name + " Version";
+                    font-size: Theme.font-lg;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+                if root.installed-version != "": Text {
+                    text: "Installed: " + root.installed-version;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: Theme.accent;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Barra de pesquisa + filtros aplicáveis
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                CrabTextInput {
+                    horizontal-stretch: 1;
+                    text <=> root.search-query;
+                    placeholder: "Search versions...";
+                    leading-icon: @image-url("../../assets/icons/search.svg");
+                    has-leading-icon: true;
+                    edited => { root.filters-changed(); }
+                }
+
+                if root.show-mc-filters: HorizontalLayout {
+                    spacing: Theme.space-xs;
+                    VerticalLayout {
+                        alignment: center;
+                        CrabCheckbox {
+                            label: "Releases";
+                            checked <=> root.filter-releases;
+                            toggled => { root.filters-changed(); }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        CrabCheckbox {
+                            label: "Snapshots";
+                            checked <=> root.filter-snapshots;
+                            toggled => { root.filters-changed(); }
+                        }
+                    }
+                }
+
+                if root.show-loader-filter: VerticalLayout {
+                    alignment: center;
+                    CrabCheckbox {
+                        label: "Experimental";
+                        checked <=> root.filter-experimental;
+                        toggled => { root.filters-changed(); }
+                    }
+                }
+            }
+
+            if root.conflict-warning != "": Rectangle {
+                border-radius: Theme.radius-sm;
+                background: Theme.warning-bg;
+                border-width: 1px;
+                border-color: Theme.warning-border;
+                HorizontalLayout {
+                    padding: Theme.space-sm;
+                    Text {
+                        text: root.conflict-warning;
+                        font-size: Theme.font-xs;
+                        color: Theme.warning-text;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            if root.error-message != "": Rectangle {
+                border-radius: Theme.radius-sm;
+                background: Theme.error-bg;
+                border-width: 1px;
+                border-color: Theme.error-border;
+                HorizontalLayout {
+                    padding: Theme.space-sm;
+                    Text {
+                        text: root.error-message;
+                        font-size: Theme.font-xs;
+                        color: Theme.error-text;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Tabela de versões compatíveis
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+                clip: true;
+
+                VerticalLayout {
+                    Rectangle {
+                        height: 26px;
+                        background: Theme.bg-interactive;
+                        HorizontalLayout {
+                            padding-left: Theme.space-md;
+                            padding-right: Theme.space-md;
+                            spacing: Theme.space-sm;
+                            Text { text: "Version"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: "Type"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 100px; vertical-alignment: center; }
+                            Text { text: "Released"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 92px; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                    }
+
+                    if root.is-loading: Rectangle {
+                        vertical-stretch: 1;
+                        Text {
+                            text: "Loading compatible versions...";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if !root.is-loading && root.rows.length == 0: Rectangle {
+                        vertical-stretch: 1;
+                        Text {
+                            text: "No compatible versions available.";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if !root.is-loading && root.rows.length > 0: ListView {
+                        vertical-stretch: 1;
+                        for r in root.rows: Rectangle {
+                            height: 30px;
+                            background: r.version == root.selected-version
+                                ? Theme.accent-muted
+                                : r-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                            r-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.selected-version = r.version; }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: Theme.space-md;
+                                padding-right: Theme.space-md;
+                                spacing: Theme.space-sm;
+
+                                Text {
+                                    text: r.is-installed ? r.version + " (Installed)" : r.version;
+                                    font-size: Theme.font-sm;
+                                    font-weight: r.version == root.selected-version || r.is-installed ? 600 : 400;
+                                    color: r.version == root.selected-version ? Theme.accent : Theme.text-primary;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: r.version-type;
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    width: 100px;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: r.released;
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    width: 92px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Footer: Refresh à esquerda | Cancel e Apply à direita
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                CrabButton {
+                    text: "Refresh";
+                    icon: @image-url("../../assets/icons/refresh.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    enabled: !root.is-loading;
+                    clicked => { root.refresh-clicked(); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                CrabButton {
+                    text: "Cancel";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Apply";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    enabled: root.selected-version != "" && root.selected-version != root.installed-version && !root.is-loading;
+                    clicked => {
+                        root.apply-clicked(root.instance-id, root.component-uid, root.selected-version);
+                    }
+                }
+            }
+        }
+    }
+}

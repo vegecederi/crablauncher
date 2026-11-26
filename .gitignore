@@ -1,0 +1,33 @@
+# Rust build artifacts
+/target/
+
+# Local tests
+/tests/
+
+# IDE, editor and local tooling files
+/.vscode/
+/.idea/
+/.serena/
+*.swp
+*.swo
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.profraw
+*.profdata
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local development artifacts
+/dist/
+/build/
+/coverage/

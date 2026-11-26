@@ -1,0 +1,58 @@
+// Textos centralizados da interface com suporte a internacionalização (en / pt-BR).
+
+export global Strings {
+    in-out property <string> lang: "en";
+    private property <bool> pt: root.lang == "pt-BR";
+
+    out property <string> app-name: "Crab";
+
+    // Toolbar
+    out property <string> add-instance: root.pt ? "Nova Instância" : "Add Instance";
+    out property <string> settings: root.pt ? "Configurações" : "Settings";
+    out property <string> accounts: root.pt ? "Contas" : "Accounts";
+
+    // Empty state
+    out property <string> empty-title: root.pt ? "Nenhuma instância ainda" : "No instances yet";
+    out property <string> empty-subtitle: root.pt ? "Crie sua primeira instância do Minecraft para começar." : "Create your first Minecraft instance to get started.";
+
+    // Sidebar
+    out property <string> no-selection-title: root.pt ? "Nenhuma instância selecionada" : "No instance selected";
+    out property <string> no-selection-hint: root.pt ? "Selecione uma instância na grade para gerenciar." : "Select an instance from the grid to inspect or manage it.";
+    out property <string> launch: root.pt ? "Jogar" : "Launch";
+    out property <string> install-instance: root.pt ? "Instalar" : "Install";
+    out property <string> retry-install: root.pt ? "Tentar Novamente" : "Retry Installation";
+    out property <string> repair-instance: root.pt ? "Reparar Instância" : "Repair Instance";
+    out property <string> edit-instance: root.pt ? "Editar Instância" : "Edit Instance";
+    out property <string> open-folder: root.pt ? "Abrir Pasta" : "Open Folder";
+    out property <string> delete-instance: root.pt ? "Excluir Instância" : "Delete Instance";
+    out property <string> version-label: "Minecraft";
+    out property <string> type-label: "Type";
+    out property <string> status-label: "Status";
+
+    // Add Instance Window
+    out property <string> add-window-title: "Add Instance — Crab";
+    out property <string> instance-name-label: "Instance Name";
+    out property <string> instance-name-placeholder: "e.g. Survival";
+    out property <string> select-version-label: "Minecraft Version";
+    out property <string> search-placeholder: "Search versions...";
+    out property <string> filter-releases: "Releases";
+    out property <string> filter-snapshots: "Snapshots";
+    out property <string> col-version: "Version";
+    out property <string> col-type: "Type";
+    out property <string> col-released: "Released";
+    out property <string> loading-versions: "Fetching Minecraft versions...";
+    out property <string> no-versions-match: "No versions match the current filters.";
+    out property <string> create: "Create";
+    out property <string> cancel: "Cancel";
+    out property <string> refresh: "Refresh";
+
+    // Rename Dialog
+    out property <string> rename-title: "Rename Instance";
+    out property <string> save: "Save";
+
+    // Delete Dialog
+    out property <string> delete-title: "Delete Instance";
+    out property <string> delete-confirm-prefix: "Are you sure you want to permanently delete";
+    out property <string> delete-confirm-suffix: "All worlds, mods, configs, and private files in this instance will be permanently removed. Shared Minecraft files will be preserved.";
+    out property <string> delete: "Delete";
+}

@@ -1,0 +1,414 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { NavigationItem } from "../components/navigation-item.slint";
+
+export struct JavaBuildItem {
+    index: int,
+    version: string,
+    build: string,
+    released: string,
+    pkg-type: string,
+    arch: string,
+    is-recommended: bool,
+}
+
+/// Janela independente de instalação de runtimes Java em 3 painéis (referência: Prism Launcher).
+export component InstallJavaWindow inherits Window {
+    title: "Install Java — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 860px;
+    preferred-height: 540px;
+    min-width: 720px;
+    min-height: 440px;
+    background: Theme.bg-primary;
+
+    // 0=Mojang, 1=Adoptium, 2=Azul Zulu, 3=IBM Semeru Open
+    in-out property <int> selected-provider: 0;
+    in property <[int]> major-versions: [];
+    in-out property <int> selected-major: 0;
+    in-out property <string> major-search: "";
+
+    in property <[JavaBuildItem]> builds: [];
+    in-out property <int> selected-build-index: -1;
+    in-out property <string> build-search: "";
+    in-out property <bool> filter-jre: true;
+    in-out property <bool> filter-jdk: true;
+    in-out property <bool> filter-recommended: false;
+
+    in property <bool> is-loading: false;
+    in property <bool> is-installing: false;
+    in property <string> status-message: "";
+    in property <string> error-message: "";
+
+    callback provider-changed(int);
+    callback major-selected(int);
+    callback filters-changed();
+    callback refresh-clicked();
+    callback recommended-clicked();
+    callback download-clicked(int);
+    callback cancel-clicked();
+
+    VerticalLayout {
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // Painel esquerdo: Providers
+            Rectangle {
+                width: 172px;
+                background: Theme.bg-secondary;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: Theme.space-xs;
+
+                    Text {
+                        text: "Providers";
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                    }
+
+                    NavigationItem {
+                        label: "Mojang";
+                        icon: @image-url("../../assets/java-providers/mojang.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-provider == 0;
+                        clicked => {
+                            root.selected-provider = 0;
+                            root.provider-changed(0);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Adoptium";
+                        icon: @image-url("../../assets/java-providers/adoptium.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-provider == 1;
+                        clicked => {
+                            root.selected-provider = 1;
+                            root.provider-changed(1);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Azul Zulu";
+                        icon: @image-url("../../assets/java-providers/azul-zulu.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-provider == 2;
+                        clicked => {
+                            root.selected-provider = 2;
+                            root.provider-changed(2);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "IBM Semeru";
+                        icon: @image-url("../../assets/java-providers/ibm-semeru.jpg");
+                        preserve-icon-colors: true;
+                        selected: root.selected-provider == 3;
+                        clicked => {
+                            root.selected-provider = 3;
+                            root.provider-changed(3);
+                        }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // Painel intermediário: Major Versions
+            Rectangle {
+                width: 146px;
+                background: Theme.bg-primary;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: Theme.space-sm;
+
+                    Text {
+                        text: "Major Versions";
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                    }
+
+                    CrabTextInput {
+                        text <=> root.major-search;
+                        placeholder: "Filter...";
+                        edited => { root.filters-changed(); }
+                    }
+
+                    ListView {
+                        vertical-stretch: 1;
+
+                        for maj in root.major-versions: Rectangle {
+                            height: 30px;
+                            border-radius: Theme.radius-sm;
+                            background: maj == root.selected-major
+                                ? Theme.accent-muted
+                                : m-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                            m-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.selected-major = maj;
+                                    root.major-selected(maj);
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: Theme.space-sm;
+                                Text {
+                                    text: "Java " + maj;
+                                    font-size: Theme.font-md;
+                                    font-weight: maj == root.selected-major ? 600 : 400;
+                                    color: maj == root.selected-major ? Theme.accent : Theme.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Painel direito: Available Builds
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg-primary;
+
+                VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+
+                        CrabTextInput {
+                            horizontal-stretch: 1;
+                            text <=> root.build-search;
+                            placeholder: "Search builds...";
+                            leading-icon: @image-url("../../assets/icons/search.svg");
+                            has-leading-icon: true;
+                            edited => { root.filters-changed(); }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            CrabCheckbox {
+                                label: "Recommended";
+                                checked <=> root.filter-recommended;
+                                toggled => { root.filters-changed(); }
+                            }
+                        }
+                    }
+
+                    // Tabela de builds
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            Rectangle {
+                                height: 26px;
+                                background: Theme.bg-interactive;
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-sm;
+                                    padding-right: Theme.space-sm;
+                                    spacing: Theme.space-sm;
+
+                                    Text { text: "Version"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 2; vertical-alignment: center; }
+                                    Text { text: "Build / Component"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 2; vertical-alignment: center; }
+                                    Text { text: "Released"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 78px; vertical-alignment: center; }
+                                    Text { text: "Type"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 42px; vertical-alignment: center; }
+                                    Text { text: "Arch"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 56px; horizontal-alignment: right; vertical-alignment: center; }
+                                }
+                            }
+
+                            if root.is-loading: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: "Fetching available Java builds...";
+                                    font-size: Theme.font-md;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if !root.is-loading && root.builds.length == 0: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: root.error-message != "" ? root.error-message : "No builds match the current filters.";
+                                    font-size: Theme.font-sm;
+                                    color: root.error-message != "" ? Theme.error-text : Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            if !root.is-loading && root.builds.length > 0: ListView {
+                                vertical-stretch: 1;
+
+                                for b in root.builds: Rectangle {
+                                    height: 30px;
+                                    background: b.index == root.selected-build-index
+                                        ? Theme.accent-muted
+                                        : b-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                    b-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.selected-build-index = b.index; }
+                                    }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-sm;
+                                        padding-right: Theme.space-sm;
+                                        spacing: Theme.space-sm;
+
+                                        Text {
+                                            text: b.version;
+                                            font-size: Theme.font-sm;
+                                            font-weight: b.index == root.selected-build-index ? 600 : 400;
+                                            color: b.index == root.selected-build-index ? Theme.accent : Theme.text-primary;
+                                            horizontal-stretch: 2;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: b.build;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            horizontal-stretch: 2;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: b.released;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 78px;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: b.pkg-type;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 42px;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: b.arch;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 56px;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Barra inferior
+        Rectangle {
+            height: 46px;
+            background: Theme.bg-secondary;
+
+            Rectangle {
+                y: 0px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                CrabButton {
+                    text: "Refresh";
+                    icon: @image-url("../../assets/icons/refresh.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    enabled: !root.is-loading && !root.is-installing;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.refresh-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Recommended";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    enabled: !root.is-loading && !root.is-installing;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.recommended-clicked(); }
+                }
+
+                Text {
+                    text: root.status-message;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "Cancel";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                CrabButton {
+                    text: root.is-installing ? "Installing..." : "Download";
+                    icon: @image-url("../../assets/icons/download.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    enabled: root.selected-build-index >= 0 && !root.is-installing && !root.is-loading;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.download-clicked(root.selected-build-index); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,206 @@
+import { Theme } from "../theme.slint";
+
+/// Container centralizado de menu de contexto com dimensionamento intrínseco pelo conteúdo.
+/// Evita herdar a altura da janela pai e elimina overflow ou espaço vazio excessivo.
+export component CrabContextMenu inherits Rectangle {
+    in property <length> menu-width: 210px;
+    in property <length> menu-max-height: 520px;
+
+    width: root.menu-width;
+    height: min(root.menu-max-height, menu-layout.preferred-height);
+    vertical-stretch: 0;
+    border-radius: Theme.radius-sm;
+    background: Theme.bg-secondary;
+    border-width: 1px;
+    border-color: Theme.border;
+    clip: true;
+
+    menu-layout := VerticalLayout {
+        padding: 4px;
+        spacing: 2px;
+        @children
+    }
+}
+
+/// Cabeçalho informativo não clicável para menus de contexto.
+export component ContextMenuHeader inherits Rectangle {
+    in property <string> text;
+    height: 24px;
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        Text {
+            text: root.text;
+            font-size: Theme.font-xs;
+            font-weight: 600;
+            color: Theme.text-secondary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+/// Divisor horizontal discreto para menus de contexto.
+export component ContextMenuDivider inherits Rectangle {
+    height: 5px;
+    Rectangle {
+        y: 2px;
+        height: 1px;
+        width: parent.width;
+        background: Theme.border;
+    }
+}
+
+/// Item reutilizável de menu de contexto com ícone Lucide, texto e atalho alinhado à direita.
+export component ContextMenuItem inherits Rectangle {
+    in property <string> text;
+    in property <string> shortcut: "";
+    in property <image> icon;
+    in property <bool> has-icon: true;
+    in property <bool> enabled: true;
+    in property <bool> danger: false;
+
+    callback clicked();
+
+    height: 28px;
+    border-radius: Theme.radius-sm;
+    background: !root.enabled
+        ? transparent
+        : item-touch.pressed
+            ? (root.danger ? Theme.danger-muted : Theme.bg-interactive-pressed)
+            : item-touch.has-hover
+                ? (root.danger ? Theme.danger-muted : Theme.bg-interactive-hover)
+                : transparent;
+
+    focus-scope := FocusScope {
+        enabled: root.enabled;
+        key-pressed(ev) => {
+            if (ev.text == Key.Return || ev.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    item-touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        spacing: 8px;
+
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+            Image {
+                source: root.icon;
+                width: 15px;
+                height: 15px;
+                colorize: !root.enabled
+                    ? Theme.text-disabled
+                    : root.danger
+                        ? (item-touch.has-hover ? Theme.error-text : Theme.icon-secondary)
+                        : Theme.icon-primary;
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-size: Theme.font-md;
+            font-weight: 500;
+            color: !root.enabled
+                ? Theme.text-disabled
+                : root.danger
+                    ? (item-touch.has-hover ? Theme.error-text : Theme.text-secondary)
+                    : Theme.text-primary;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        if root.shortcut != "": Text {
+            text: root.shortcut;
+            font-size: Theme.font-xs;
+            color: !root.enabled ? Theme.text-disabled : Theme.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+}
+
+/// Item de menu de contexto com indicador de seleção (checkbox) para opções de alternância.
+export component ContextMenuCheckItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> checked: false;
+    in property <bool> enabled: true;
+
+    callback toggled();
+
+    height: 28px;
+    border-radius: Theme.radius-sm;
+    background: !root.enabled
+        ? transparent
+        : item-touch.pressed
+            ? Theme.bg-interactive-pressed
+            : item-touch.has-hover || focus-scope.has-focus
+                ? Theme.bg-interactive-hover
+                : transparent;
+
+    focus-scope := FocusScope {
+        enabled: root.enabled;
+        key-pressed(ev) => {
+            if (ev.text == Key.Return || ev.text == " ") {
+                root.toggled();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    item-touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.toggled(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                border-width: 1px;
+                background: root.checked ? Theme.accent : Theme.bg-primary;
+                border-color: root.checked ? Theme.accent : Theme.border;
+
+                if root.checked: Image {
+                    source: @image-url("../../assets/icons/check.svg");
+                    width: 11px;
+                    height: 11px;
+                    x: 1.5px;
+                    y: 1.5px;
+                    colorize: Theme.text-on-accent;
+                }
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-size: Theme.font-md;
+            font-weight: 500;
+            color: root.enabled ? Theme.text-primary : Theme.text-disabled;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}

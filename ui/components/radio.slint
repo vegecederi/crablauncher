@@ -1,0 +1,83 @@
+import { Theme } from "../theme.slint";
+
+/// Botão de seleção exclusiva (radio) consistente com o Theme Engine do Crab.
+export component CrabRadioButton inherits Rectangle {
+    in property <bool> selected: false;
+    in property <string> label;
+    in property <string> description: "";
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    min-height: root.description == "" ? 26px : 38px;
+    border-radius: Theme.radius-sm;
+    background: touch.has-hover && root.enabled ? Theme.bg-interactive : transparent;
+
+    focus-scope := FocusScope {
+        enabled: root.enabled;
+        key-pressed(ev) => {
+            if (ev.text == Key.Return || ev.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-xs;
+        padding-right: Theme.space-sm;
+        padding-top: 3px;
+        padding-bottom: 3px;
+        spacing: Theme.space-sm;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 15px;
+                height: 15px;
+                border-radius: 8px;
+                border-width: 1px;
+                background: Theme.bg-primary;
+                border-color: !root.enabled
+                    ? Theme.border-subtle
+                    : root.selected || focus-scope.has-focus
+                        ? Theme.accent
+                        : Theme.border;
+
+                if root.selected: Rectangle {
+                    x: 3.5px;
+                    y: 3.5px;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: root.enabled ? Theme.accent : Theme.text-disabled;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: root.label;
+                font-size: Theme.font-md;
+                font-weight: root.selected ? 500 : 400;
+                color: root.enabled ? Theme.text-primary : Theme.text-disabled;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                font-size: Theme.font-xs;
+                color: root.enabled ? Theme.text-secondary : Theme.text-disabled;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

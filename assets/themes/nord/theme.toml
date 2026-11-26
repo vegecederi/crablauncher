@@ -1,0 +1,33 @@
+schema_version = 1
+
+[metadata]
+id = "nord"
+name = "Nord"
+author = "Crab Team"
+version = "1.0.0"
+description = "Arctic, north-bluish color palette with calm contrast."
+base = "crab-dark"
+
+[colors]
+background = "#2e3440"
+surface = "#3b4252"
+surface_elevated = "#434c5e"
+border = "#4c566a"
+border_subtle = "#434c5e"
+accent = "#88c0d0"
+accent_hover = "#96cddc"
+accent_pressed = "#75aebf"
+accent_muted = "#88c0d026"
+accent_foreground = "#2e3440"
+text_primary = "#eceff4"
+text_secondary = "#d8dee9"
+text_disabled = "#7b88a1"
+hover = "#4c566a"
+pressed = "#3b4252"
+danger = "#bf616a"
+success = "#a3be8c"
+warning = "#ebcb8b"
+console_bg = "#252a34"
+
+[geometry]
+border_radius = 4

@@ -1,0 +1,158 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+export struct ReviewItemEntry {
+    title: string,
+    version: string,
+    provider: string,
+    is-dependency: bool,
+    icon: image,
+    has-icon: bool,
+}
+
+/// Janela nativa de revisão e confirmação de conteúdos selecionados para download.
+export component ReviewModsWindow inherits Window {
+    title: "Review & Confirm — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 520px;
+    preferred-height: 400px;
+    min-width: 440px;
+    min-height: 320px;
+    background: Theme.bg-secondary;
+
+    in property <[ReviewItemEntry]> review-items: [];
+    in property <bool> is-installing: false;
+
+    callback confirm-install();
+    callback cancelled();
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Review & Confirm (" + root.review-items.length + ")";
+        subtitle: "Review selected items and required dependencies before downloading.";
+        escape-pressed => { root.cancelled(); }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-primary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            ListView {
+                for item in root.review-items: Rectangle {
+                    height: 48px;
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-md;
+                        padding-right: Theme.space-md;
+                        spacing: Theme.space-sm;
+
+                        VerticalLayout {
+                            width: 32px;
+                            alignment: center;
+                            if item.has-icon: Image {
+                                source: item.icon;
+                                width: 28px;
+                                height: 28px;
+                                image-fit: cover;
+                            }
+                            if !item.has-icon: Image {
+                                source: item.provider == "Modrinth"
+                                    ? @image-url("../../assets/providers/modrinth.svg")
+                                    : item.provider == "CurseForge"
+                                        ? @image-url("../../assets/providers/curseforge.svg")
+                                        : @image-url("../../assets/icons/puzzle.svg");
+                                width: 24px;
+                                height: 24px;
+                                image-fit: contain;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+
+                                Text {
+                                    text: item.title;
+                                    font-size: Theme.font-sm;
+                                    font-weight: 600;
+                                    color: Theme.text-primary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                if item.is-dependency: Rectangle {
+                                    height: 18px;
+                                    width: dep-txt.preferred-width + 10px;
+                                    border-radius: Theme.radius-sm;
+                                    background: Theme.accent-muted;
+
+                                    dep-txt := Text {
+                                        text: "Dependency";
+                                        font-size: 10px;
+                                        font-weight: 600;
+                                        color: Theme.accent;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: item.version;
+                                font-size: Theme.font-xs;
+                                color: Theme.text-secondary;
+                                overflow: elide;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        width: parent.width;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancelled(); }
+            }
+
+            CrabButton {
+                text: "Confirm & Download";
+                icon: @image-url("../../assets/icons/download.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: !root.is-installing && root.review-items.length > 0;
+                clicked => { root.confirm-install(); }
+            }
+        }
+    }
+}

@@ -1,0 +1,23 @@
+import { Theme } from "../theme.slint";
+
+/// Indicador chevron reutilizável baseado em Lucide SVG (12–14px).
+export component ChevronIcon inherits VerticalLayout {
+    in property <string> direction: "down"; // "down" | "right" | "up" | "left"
+    in property <length> icon-size: 13px;
+    in property <color> icon-color: Theme.icon-secondary;
+
+    alignment: center;
+
+    Image {
+        source: root.direction == "right"
+            ? @image-url("../../assets/icons/chevron-right.svg")
+            : root.direction == "up"
+                ? @image-url("../../assets/icons/chevron-up.svg")
+                : root.direction == "left"
+                    ? @image-url("../../assets/icons/chevron-left.svg")
+                    : @image-url("../../assets/icons/chevron-down.svg");
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: root.icon-color;
+    }
+}

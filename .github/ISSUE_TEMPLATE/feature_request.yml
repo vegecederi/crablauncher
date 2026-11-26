@@ -1,0 +1,32 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Crab Launcher
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to improve Crab Launcher? Share it below!
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A clear and concise description of the feature you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve, or how would it improve your workflow?
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional Context
+      description: Any mockups, references, or implementation ideas.
+    validations:
+      required: false

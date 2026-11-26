@@ -1,0 +1,9 @@
+schema_version = 1
+id = "default"
+name = "Launcher Default"
+description = "Uses the conservative default arguments managed by Crab for your Minecraft, Java, and modloader version."
+args = []
+min_java_major = 8
+supported_arches = []
+source = "Crab Official"
+version = "1.0.0"

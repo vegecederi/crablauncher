@@ -1,0 +1,3677 @@
+import { ListView, TextEdit } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { CrabRadioButton } from "../components/radio.slint";
+import { CrabDropdown, DropdownOption } from "../components/dropdown.slint";
+import { NavigationItem } from "../components/navigation-item.slint";
+import { SettingsSection } from "../components/settings-section.slint";
+
+export struct GroupOption {
+    id: string,
+    name: string,
+}
+
+export struct ComponentItem {
+    uid: string,
+    name: string,
+    version: string,
+    status: string,
+    required: bool,
+}
+
+export struct LocalModItem {
+    file-name: string,
+    name: string,
+    version: string,
+    loader: string,
+    last-modified: string,
+    provider: string,
+    homepage-url: string,
+    author: string,
+    description: string,
+    icon: image,
+    has-icon: bool,
+    enabled: bool,
+    selected: bool,
+    warning: string,
+}
+
+export struct PackItem {
+    file-name: string,
+    display-name: string,
+    version-or-format: string,
+    last-modified: string,
+    provider: string,
+    homepage-url: string,
+    author: string,
+    description: string,
+    size-display: string,
+    icon: image,
+    has-icon: bool,
+    selected: bool,
+    incompatible: bool,
+    incompatibility-reason: string,
+}
+
+export struct WorldItem {
+    folder-name: string,
+    display-name: string,
+    mc-version: string,
+    game-mode: string,
+    last-modified: string,
+    size-display: string,
+    icon: image,
+    has-icon: bool,
+}
+
+export struct ServerItem {
+    index: int,
+    name: string,
+    ip: string,
+    icon: image,
+    has-icon: bool,
+}
+
+export struct ScreenshotItem {
+    file-name: string,
+    display-name: string,
+    thumbnail: image,
+    has-thumbnail: bool,
+}
+
+export struct SessionLogItem {
+    file-name: string,
+    timestamp: string,
+    size-display: string,
+}
+
+export struct SessionLogLine {
+    text: string,
+    level: string, // "ERROR" | "WARN" | "INFO"
+}
+
+/// Janela Edit Instance reformulada em 4 regiões (referência: Prism Launcher).
+export component EditInstanceWindow inherits Window {
+    title: "Edit Instance — " + root.instance-name;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 980px;
+    preferred-height: 740px;
+    min-width: 800px;
+    min-height: 520px;
+    background: Theme.bg-primary;
+
+    // 0=Version, 1=Mods, 2=Texture Packs, 3=Shader Packs, 4=Worlds, 5=Servers, 6=Settings
+    in-out property <int> active-page: 0;
+    // 0=General, 1=Java, 2=Console, 3=Tweaks (abas secundárias da página Settings)
+    in-out property <int> settings-subtab: 0;
+
+    in-out property <string> instance-id: "";
+    in-out property <string> instance-name: "";
+    in property <image> instance-icon;
+    in property <bool> has-instance-icon: false;
+    in property <string> group-name-display: "Ungrouped";
+    in property <[DropdownOption]> group-dropdown-options: [];
+    callback group-selected(string);
+
+    // Seleção múltipla e atalhos de teclado (Mods, Texture Packs, Shader Packs)
+    callback content-item-clicked(string, int, bool, bool);
+    callback content-select-all(string);
+    callback content-clear-selection(string);
+    callback content-navigate(string, int, bool);
+    callback content-delete-selected(string);
+    callback request-delete-server-dialog(int, string);
+    in property <string> system-ram-display: "";
+    in property <string> system-avail-ram-display: "";
+    in property <int> system-ram-total-mib: 16384;
+    in property <string> java-test-result: "";
+    in property <string> jvm-test-result: "";
+    in property <bool> is-running: false;
+    in property <bool> has-modloader: false;
+
+    // Version page
+    in property <[ComponentItem]> components: [];
+    in-out property <string> selected-component-uid: "";
+
+    callback change-component-version-clicked(string);
+    callback move-component-up-clicked(string);
+    callback move-component-down-clicked(string);
+    callback remove-component-clicked(string);
+    callback customize-component-clicked(string);
+    callback edit-component-clicked(string);
+    callback revert-component-clicked(string);
+    callback add-to-mc-jar-clicked();
+    callback replace-mc-jar-clicked();
+    callback add-agents-clicked();
+    callback add-empty-component-clicked();
+    callback import-components-clicked();
+    callback open-libraries-folder-clicked();
+    callback download-all-clicked();
+
+    // Change Minecraft Version inline dialog
+    in property <[string]> available-mc-versions: [];
+    in-out property <bool> show-change-mc-version-dialog: false;
+    in-out property <string> change-mc-version-search: "";
+    callback change-mc-version-confirmed(string);
+
+    // Screenshots page
+    in property <[ScreenshotItem]> screenshots: [];
+    in-out property <string> selected-screenshot-file: "";
+    private property <bool> show-rename-screenshot-dialog: false;
+    private property <string> rename-screenshot-input: "";
+    callback refresh-screenshots-clicked();
+    callback open-screenshot-clicked(string);
+    callback copy-screenshot-image-clicked(string);
+    callback copy-screenshot-file-clicked(string);
+    callback rename-screenshot-clicked(string, string);
+    callback delete-screenshot-clicked(string);
+    callback open-screenshots-folder-clicked();
+
+    // Logs page
+    in property <[SessionLogItem]> session-logs: [];
+    in-out property <string> selected-log-file: "";
+    in property <[SessionLogLine]> session-log-lines: [];
+    in-out property <string> log-search-query: "";
+    callback refresh-logs-clicked();
+    callback select-log-file(string);
+    callback copy-log-clicked(string);
+    callback export-log-clicked(string);
+    callback delete-log-clicked(string);
+    callback open-logs-folder-clicked();
+
+    // Mods page
+    in property <[LocalModItem]> mods: [];
+    in-out property <string> selected-mod-file: "";
+    in-out property <string> selected-mod-name: "";
+    in-out property <string> selected-mod-author: "";
+    in-out property <string> selected-mod-description: "";
+    in-out property <string> selected-mod-url: "";
+    in-out property <string> selected-mod-provider: "";
+    in-out property <image> selected-mod-icon;
+    in-out property <bool> selected-mod-has-icon: false;
+    callback open-url-clicked(string);
+    callback request-rename-screenshot-dialog(string);
+    callback request-rename-world-dialog(string);
+    callback request-delete-world-dialog(string);
+    callback request-server-dialog(bool, int, string, string); // (is_edit, idx, name, address)
+    in-out property <string> add-mod-path: "";
+    in-out property <string> mod-search-query: "";
+
+    callback download-mods-clicked();
+    callback check-mod-updates-clicked();
+    callback verify-dependencies-clicked();
+    private property <bool> show-updates-menu: false;
+    callback change-mod-version-clicked(string);
+    callback add-mod-file-clicked();
+    callback view-mod-homepage-clicked(string);
+    callback export-mods-list-clicked();
+    callback open-configs-folder-clicked();
+
+    // Texture Packs page
+    in property <[PackItem]> texture-packs: [];
+    in-out property <string> selected-texture-pack: "";
+    in-out property <string> selected-texture-pack-name: "";
+    in-out property <string> selected-texture-pack-author: "";
+    in-out property <string> selected-texture-pack-description: "";
+    in-out property <string> selected-texture-pack-url: "";
+    in-out property <string> selected-texture-pack-provider: "";
+    in-out property <image> selected-texture-pack-icon;
+    in-out property <bool> selected-texture-pack-has-icon: false;
+    in-out property <string> texture-pack-search: "";
+
+    // Shader Packs page
+    in property <[PackItem]> shader-packs: [];
+    in-out property <string> selected-shader-pack: "";
+    in-out property <string> selected-shader-pack-name: "";
+    in-out property <string> selected-shader-pack-author: "";
+    in-out property <string> selected-shader-pack-description: "";
+    in-out property <string> selected-shader-pack-url: "";
+    in-out property <string> selected-shader-pack-provider: "";
+    in-out property <image> selected-shader-pack-icon;
+    in-out property <bool> selected-shader-pack-has-icon: false;
+    in-out property <string> shader-pack-search: "";
+    in property <bool> has-shader-mod: false;
+
+    // Worlds page
+    in property <[WorldItem]> worlds: [];
+    in-out property <string> selected-world-folder: "";
+    in-out property <string> world-search: "";
+    private property <bool> show-rename-world-dialog: false;
+    private property <string> rename-world-input: "";
+    private property <bool> show-delete-world-dialog: false;
+
+    // Servers page
+    in property <[ServerItem]> servers: [];
+    in-out property <int> selected-server-index: -1;
+    private property <bool> show-server-dialog: false;
+    private property <bool> server-dialog-is-edit: false;
+    private property <string> server-name-input: "";
+    private property <string> server-ip-input: "";
+
+    callback download-texture-packs-clicked();
+    callback check-texture-pack-updates-clicked();
+    callback change-texture-pack-version-clicked(string);
+    callback view-texture-pack-homepage-clicked(string);
+    callback import-texture-pack-clicked();
+    callback remove-texture-pack-clicked(string);
+    callback open-texture-packs-folder-clicked();
+    callback refresh-texture-packs-clicked();
+
+    callback download-shader-packs-clicked();
+    callback check-shader-pack-updates-clicked();
+    callback change-shader-pack-version-clicked(string);
+    callback view-shader-pack-homepage-clicked(string);
+    callback import-shader-pack-clicked();
+    callback remove-shader-pack-clicked(string);
+    callback open-shader-packs-folder-clicked();
+    callback refresh-shader-packs-clicked();
+
+    callback import-world-clicked();
+    callback export-world-clicked(string);
+    callback backup-world-clicked(string);
+    callback rename-world-clicked(string, string);
+    callback delete-world-clicked(string);
+    callback open-world-folder-clicked(string);
+    callback open-world-datapacks-clicked(string);
+    callback reset-world-icon-clicked(string);
+    callback copy-world-seed-clicked(string);
+    callback refresh-worlds-clicked();
+
+    callback add-server-clicked(string, string);
+    callback edit-server-clicked(int, string, string);
+    callback remove-server-clicked(int);
+    callback move-server-up-clicked(int);
+    callback move-server-down-clicked(int);
+    callback join-server-clicked(string);
+    callback refresh-servers-clicked();
+
+    // Settings page — General (Window + Launcher Behavior)
+    in property <[GroupOption]> groups: [];
+    in-out property <string> selected-group-id: "";
+
+    in-out property <bool> override-window: false;
+    in-out property <string> window-width: "854";
+    in-out property <string> window-height: "480";
+    in-out property <bool> start-fullscreen: false;
+    in-out property <bool> use-custom-resolution: true;
+    in property <[DropdownOption]> resolution-preset-options: [];
+    in-out property <string> resolution-preset-id: "854x480";
+    in-out property <string> resolution-preset-label: "854 × 480";
+
+    in-out property <bool> override-launcher-behavior: false;
+    in-out property <int> on-launch-behavior: 0; // 0=KeepOpen, 1=Minimize, 2=Hide, 3=Close
+    in-out property <bool> reopen-on-exit: true;
+    in-out property <bool> reopen-on-crash: true;
+    in-out property <bool> reopen-on-kill: false;
+
+    // Settings page — Java
+    in-out property <bool> override-java: false;
+    in-out property <string> java-path: "";
+    in-out property <bool> override-memory: false;
+    in-out property <string> min-memory-mb: "512";
+    in-out property <string> max-memory-mb: "2048";
+    in property <[DropdownOption]> memory-preset-options: [];
+    in-out property <string> memory-preset-id: "2048";
+    in-out property <string> memory-preset-label: "2 GiB — 2048 MiB";
+    in property <string> memory-warning: "";
+    in-out property <bool> override-jvm-args: false;
+    in-out property <bool> use-default-jvm-args: false;
+    in property <[DropdownOption]> jvm-preset-options: [];
+    in-out property <string> jvm-preset-id: "default";
+    in-out property <string> jvm-preset-label: "Launcher Default";
+    in property <string> jvm-preset-description: "";
+    in property <string> jvm-preset-compat: "";
+    in-out property <string> jvm-args: "";
+
+    // Settings page — Console
+    in-out property <bool> override-console: false;
+    in-out property <bool> show-console-on-launch: true;
+    in-out property <bool> show-console-on-crash: true;
+    in-out property <bool> close-console-on-exit: false;
+
+    // Settings page — Tweaks
+    in property <bool> is-linux: true;
+    in-out property <bool> override-tweaks: false;
+    in-out property <bool> enable-gamemode: false;
+    in property <bool> gamemode-available: false;
+    in property <string> gamemode-status: "Not Installed";
+    in-out property <bool> enable-mangohud: false;
+    in property <bool> mangohud-available: false;
+    in property <string> mangohud-status: "Not Installed";
+    in-out property <bool> use-discrete-gpu: false;
+    in property <bool> discrete-gpu-available: false;
+    in property <string> gpu-detail: "";
+    in-out property <bool> use-zink: false;
+    in property <bool> zink-available: false;
+    in property <string> zink-status: "";
+
+    in-out property <bool> show-reset-confirm: false;
+    in property <string> error-message: "";
+    in property <string> status-message: "";
+
+    // Callbacks
+    callback install-loader-clicked();
+    callback remove-loader-clicked();
+    callback open-mc-folder-clicked();
+    callback repair-clicked();
+    callback reload-version-clicked();
+
+    callback add-mod-clicked(string);
+    callback toggle-mod-clicked(string);
+    callback remove-mod-clicked(string);
+    callback open-mods-folder-clicked();
+    callback refresh-mods-clicked();
+
+    callback open-global-settings-clicked();
+    callback reset-to-global-clicked();
+    callback change-group-clicked();
+    callback detect-java-clicked();
+    callback browse-java-clicked();
+    callback open-java-downloader-clicked();
+    callback test-java-clicked(string);
+    callback resolution-preset-selected(string);
+    callback resolution-fields-edited();
+    callback memory-preset-selected(string);
+    callback memory-fields-edited();
+    callback jvm-preset-selected(string);
+    callback jvm-args-edited();
+    callback manage-jvm-presets-clicked();
+    callback save-as-jvm-preset-clicked(string);
+    callback test-jvm-args-clicked(string, string, string, string);
+    callback copy-jvm-args-clicked(string);
+    callback open-mangohud-config-clicked();
+    callback launch-clicked();
+    callback stop-clicked();
+    callback save-clicked();
+    callback cancel-clicked();
+
+    private property <int> active-override-count:
+        (root.override-window ? 1 : 0)
+        + (root.override-launcher-behavior ? 1 : 0)
+        + (root.override-java ? 1 : 0)
+        + (root.override-memory ? 1 : 0)
+        + (root.override-jvm-args ? 1 : 0)
+        + (root.override-console ? 1 : 0)
+        + (root.override-tweaks ? 1 : 0);
+
+    VerticalLayout {
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // 1. Sidebar esquerda de navegação
+            Rectangle {
+                width: 164px;
+                background: Theme.bg-secondary;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: Theme.space-xs;
+
+                    NavigationItem {
+                        label: "Version";
+                        icon: root.has-instance-icon
+                            ? root.instance-icon
+                            : @image-url("../../assets/icons/cube.svg");
+                        preserve-icon-colors: root.has-instance-icon;
+                        selected: root.active-page == 0;
+                        clicked => { root.active-page = 0; }
+                    }
+
+                    NavigationItem {
+                        label: "Mods";
+                        icon: @image-url("../../assets/icons/puzzle.svg");
+                        selected: root.active-page == 1;
+                        clicked => { root.active-page = 1; }
+                    }
+
+                    NavigationItem {
+                        label: "Texture Packs";
+                        icon: @image-url("../../assets/icons/palette.svg");
+                        selected: root.active-page == 2;
+                        clicked => {
+                            root.active-page = 2;
+                            root.refresh-texture-packs-clicked();
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Shader Packs";
+                        icon: @image-url("../../assets/icons/layers.svg");
+                        selected: root.active-page == 3;
+                        clicked => {
+                            root.active-page = 3;
+                            root.refresh-shader-packs-clicked();
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Worlds";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        selected: root.active-page == 4;
+                        clicked => {
+                            root.active-page = 4;
+                            root.refresh-worlds-clicked();
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Servers";
+                        icon: @image-url("../../assets/icons/terminal.svg");
+                        selected: root.active-page == 5;
+                        clicked => {
+                            root.active-page = 5;
+                            root.refresh-servers-clicked();
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Screenshots";
+                        icon: @image-url("../../assets/icons/palette.svg");
+                        selected: root.active-page == 6;
+                        clicked => {
+                            root.active-page = 6;
+                            root.refresh-screenshots-clicked();
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Logs";
+                        icon: @image-url("../../assets/icons/file-text.svg");
+                        selected: root.active-page == 7;
+                        clicked => {
+                            root.active-page = 7;
+                            root.refresh-logs-clicked();
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Settings";
+                        icon: @image-url("../../assets/icons/settings.svg");
+                        selected: root.active-page == 8;
+                        clicked => { root.active-page = 8; }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // 2. Área central
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg-primary;
+
+                // Página 0: Version (Component Management)
+                if root.active-page == 0: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    Text {
+                        text: "Components";
+                        font-size: Theme.font-lg;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            Rectangle {
+                                height: 26px;
+                                background: Theme.bg-interactive;
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-sm;
+
+                                    Text { text: "Name"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 1; min-width: 0px; vertical-alignment: center; }
+                                    Text { text: "Version"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 130px; vertical-alignment: center; }
+                                    Text { text: "Status"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 100px; horizontal-alignment: right; vertical-alignment: center; }
+                                }
+                            }
+
+                            ListView {
+                                vertical-stretch: 1;
+
+                                for comp in root.components: Rectangle {
+                                    height: 32px;
+                                    background: comp.uid == root.selected-component-uid
+                                        ? Theme.accent-muted
+                                        : c-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                    c-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.selected-component-uid = comp.uid; }
+                                    }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-md;
+                                        padding-right: Theme.space-md;
+                                        spacing: Theme.space-sm;
+
+                                        // Ícone representativo do componente
+                                        VerticalLayout {
+                                            width: 20px;
+                                            alignment: center;
+                                            if comp.uid == "net.fabricmc.fabric-loader" || comp.uid == "net.fabricmc.intermediary": Image {
+                                                source: @image-url("../../assets/modloaders/fabric.png");
+                                                width: 16px;
+                                                height: 16px;
+                                                image-fit: contain;
+                                            }
+                                            if comp.uid == "net.minecraftforge": Image {
+                                                source: @image-url("../../assets/modloaders/forge.jpg");
+                                                width: 16px;
+                                                height: 16px;
+                                                image-fit: contain;
+                                            }
+                                            if comp.uid == "net.neoforged": Image {
+                                                source: @image-url("../../assets/modloaders/neoforge.png");
+                                                width: 16px;
+                                                height: 16px;
+                                                image-fit: contain;
+                                            }
+                                            if comp.uid == "org.quiltmc.quilt-loader": Image {
+                                                source: @image-url("../../assets/modloaders/quilt.png");
+                                                width: 16px;
+                                                height: 16px;
+                                                image-fit: contain;
+                                            }
+                                            if comp.uid == "com.mumfrey.liteloader": Image {
+                                                source: @image-url("../../assets/modloaders/liteloader.png");
+                                                width: 16px;
+                                                height: 16px;
+                                                image-fit: contain;
+                                            }
+                                            if comp.uid == "net.minecraft": Image {
+                                                source: @image-url("../../assets/icons/cube.svg");
+                                                width: 16px;
+                                                height: 16px;
+                                                colorize: Theme.accent;
+                                            }
+                                            if comp.uid == "org.lwjgl" || comp.uid == "org.lwjgl3": Image {
+                                                source: @image-url("../../assets/icons/layers.svg");
+                                                width: 16px;
+                                                height: 16px;
+                                                colorize: Theme.icon-primary;
+                                            }
+                                            if comp.uid != "net.minecraft" && comp.uid != "org.lwjgl" && comp.uid != "org.lwjgl3" && comp.uid != "net.fabricmc.fabric-loader" && comp.uid != "net.fabricmc.intermediary" && comp.uid != "net.minecraftforge" && comp.uid != "net.neoforged" && comp.uid != "org.quiltmc.quilt-loader" && comp.uid != "com.mumfrey.liteloader": Image {
+                                                source: @image-url("../../assets/icons/puzzle.svg");
+                                                width: 16px;
+                                                height: 16px;
+                                                colorize: Theme.icon-secondary;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: comp.name;
+                                            font-size: Theme.font-md;
+                                            font-weight: 500;
+                                            color: comp.uid == root.selected-component-uid ? Theme.accent : Theme.text-primary;
+                                            horizontal-stretch: 1;
+                                            min-width: 0px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: comp.version;
+                                            font-size: Theme.font-sm;
+                                            color: Theme.text-secondary;
+                                            width: 130px;
+                                            horizontal-alignment: left;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: comp.status;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 100px;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Página 1: Mods (gerenciamento local)
+                if root.active-page == 1: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    if !root.has-modloader: Rectangle {
+                        height: 38px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.warning-bg;
+                        border-width: 1px;
+                        border-color: Theme.warning-border;
+                        HorizontalLayout {
+                            padding-left: Theme.space-sm;
+                            padding-right: Theme.space-sm;
+                            spacing: Theme.space-sm;
+                            Text {
+                                text: "This instance has no modloader (Fabric, Forge or NeoForge). Install a loader to use conventional mods.";
+                                font-size: Theme.font-xs;
+                                color: Theme.warning-text;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            CrabButton {
+                                text: "Install Loader";
+                                icon: @image-url("../../assets/icons/download.svg");
+                                has-icon: true;
+                                variant: "secondary";
+                                y: (parent.height - self.height) / 2;
+                                clicked => { root.install-loader-clicked(); }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+                        Text {
+                            text: "Mods";
+                            font-size: Theme.font-lg;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            Rectangle {
+                                height: 26px;
+                                background: Theme.bg-interactive;
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-sm;
+
+                                    Text { text: "Enable"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 46px; vertical-alignment: center; }
+                                    Text { text: "Icon"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 28px; vertical-alignment: center; }
+                                    Text { text: "Name"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 2; vertical-alignment: center; }
+                                    Text { text: "Version"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 84px; vertical-alignment: center; }
+                                    Text { text: "Last Modified"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 88px; vertical-alignment: center; }
+                                    Text { text: "Provider"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 76px; vertical-alignment: center; }
+                                }
+                            }
+
+                            if root.mods.length == 0: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: "No mods installed in .minecraft/mods/.";
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.mods.length > 0: mods-list-scope := FocusScope {
+                                vertical-stretch: 1;
+                                property <bool> ctrl-down: false;
+                                property <bool> shift-down: false;
+
+                                key-pressed(ev) => {
+                                    self.ctrl-down = ev.modifiers.control;
+                                    self.shift-down = ev.modifiers.shift;
+                                    if (ev.modifiers.control && (ev.text == "a" || ev.text == "A")) {
+                                        root.content-select-all("mods");
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Delete) {
+                                        root.content-delete-selected("mods");
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.UpArrow) {
+                                        root.content-navigate("mods", -1, ev.modifiers.shift);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.DownArrow) {
+                                        root.content-navigate("mods", 1, ev.modifiers.shift);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Escape) {
+                                        root.content-clear-selection("mods");
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                                key-released(ev) => {
+                                    self.ctrl-down = ev.modifiers.control;
+                                    self.shift-down = ev.modifiers.shift;
+                                    reject
+                                }
+
+                                ListView {
+                                    width: parent.width;
+                                    height: parent.height;
+
+                                    for m[idx] in root.mods: Rectangle {
+                                        height: 50px;
+                                        background: (m.selected || m.file-name == root.selected-mod-file)
+                                            ? Theme.accent-muted
+                                            : m-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                        if m.selected || m.file-name == root.selected-mod-file: Rectangle {
+                                            x: 0px;
+                                            width: 3px;
+                                            height: parent.height;
+                                            background: Theme.accent;
+                                        }
+
+                                        m-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                mods-list-scope.focus();
+                                                root.content-item-clicked("mods", idx, mods-list-scope.ctrl-down, mods-list-scope.shift-down);
+                                            }
+                                        }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-md;
+                                        padding-right: Theme.space-md;
+                                        spacing: Theme.space-sm;
+
+                                        VerticalLayout {
+                                            width: 46px;
+                                            alignment: center;
+                                            CrabCheckbox {
+                                                label: "";
+                                                checked: m.enabled;
+                                                toggled => { root.toggle-mod-clicked(m.file-name); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            width: 32px;
+                                            alignment: center;
+                                            if m.has-icon: Image {
+                                                source: m.icon;
+                                                width: 28px;
+                                                height: 28px;
+                                                image-fit: cover;
+                                            }
+                                            if !m.has-icon: Image {
+                                                source: m.provider == "Modrinth"
+                                                    ? @image-url("../../assets/providers/modrinth.svg")
+                                                    : m.provider == "CurseForge"
+                                                        ? @image-url("../../assets/providers/curseforge.svg")
+                                                        : @image-url("../../assets/icons/puzzle.svg");
+                                                width: 24px;
+                                                height: 24px;
+                                                image-fit: contain;
+                                            }
+                                        }
+                                        Text {
+                                            text: m.warning != "" ? m.name + " (" + m.warning + ")" : m.name;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: m.warning != "" ? Theme.warning-text : Theme.text-primary;
+                                            horizontal-stretch: 2;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: m.version;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 84px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: m.last-modified;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 88px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: m.provider;
+                                            font-size: Theme.font-xs;
+                                            color: m.provider == "Modrinth" || m.provider == "CurseForge"
+                                                ? Theme.accent
+                                                : Theme.text-secondary;
+                                            width: 76px;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Painel compacto de detalhes do mod selecionado (estilo Prism Launcher)
+                    if root.selected-mod-file != "": Rectangle {
+                        height: 76px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        HorizontalLayout {
+                            padding: Theme.space-sm;
+                            spacing: Theme.space-md;
+
+                            // Ícone oficial do mod (56x56)
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-primary;
+                                border-width: 1px;
+                                border-color: Theme.border-subtle;
+                                clip: true;
+
+                                if root.selected-mod-has-icon: Image {
+                                    width: 56px;
+                                    height: 56px;
+                                    source: root.selected-mod-icon;
+                                    image-fit: cover;
+                                }
+                                if !root.selected-mod-has-icon: Image {
+                                    x: 14px;
+                                    y: 14px;
+                                    width: 28px;
+                                    height: 28px;
+                                    source: root.selected-mod-provider == "Modrinth"
+                                        ? @image-url("../../assets/providers/modrinth.svg")
+                                        : root.selected-mod-provider == "CurseForge"
+                                            ? @image-url("../../assets/providers/curseforge.svg")
+                                            : @image-url("../../assets/icons/puzzle.svg");
+                                    image-fit: contain;
+                                    colorize: root.selected-mod-provider == "Local" ? Theme.icon-secondary : transparent;
+                                }
+                            }
+
+                            // Nome clicável (link), Autor e Breve Descrição
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 4px;
+
+                                HorizontalLayout {
+                                    spacing: 5px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        height: 20px;
+                                        width: mod-link-txt.preferred-width;
+
+                                        mod-link-touch := TouchArea {
+                                            enabled: root.selected-mod-url != "";
+                                            mouse-cursor: root.selected-mod-url != "" ? pointer : default;
+                                            clicked => {
+                                                if (root.selected-mod-url != "") {
+                                                    root.open-url-clicked(root.selected-mod-url);
+                                                }
+                                            }
+                                        }
+
+                                        mod-link-txt := Text {
+                                            text: root.selected-mod-name != "" ? root.selected-mod-name : root.selected-mod-file;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: root.selected-mod-url != "" ? Theme.accent : Theme.text-primary;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+
+                                        if root.selected-mod-url != "": Rectangle {
+                                            y: parent.height - 2px;
+                                            height: 1px;
+                                            width: parent.width;
+                                            background: mod-link-touch.has-hover ? Theme.accent-hover : Theme.accent;
+                                        }
+                                    }
+
+                                    if root.selected-mod-author != "": Text {
+                                        text: "by " + root.selected-mod-author;
+                                        font-size: Theme.font-sm;
+                                        color: Theme.text-secondary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                Text {
+                                    text: root.selected-mod-description != ""
+                                        ? root.selected-mod-description
+                                        : "Local mod file (" + root.selected-mod-file + ")";
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    // Barra de pesquisa abaixo da tabela de mods
+                    CrabTextInput {
+                        text <=> root.mod-search-query;
+                        placeholder: "Search installed mods...";
+                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        has-leading-icon: true;
+                        edited => { root.refresh-mods-clicked(); }
+                    }
+                }
+
+                // Página 2: Texture Packs / Resource Packs (mesma estrutura visual e funcional da aba Mods)
+                if root.active-page == 2: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    // Tabela principal de texture/resource packs
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            Rectangle {
+                                height: 26px;
+                                background: Theme.bg-interactive;
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-sm;
+
+                                    Text { text: "Icon"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 32px; vertical-alignment: center; }
+                                    Text { text: "Name"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 2; vertical-alignment: center; }
+                                    Text { text: "Version / Format"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 108px; vertical-alignment: center; }
+                                    Text { text: "Last Modified"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 104px; vertical-alignment: center; }
+                                    Text { text: "Provider"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 76px; vertical-alignment: center; }
+                                }
+                            }
+
+                            if root.texture-packs.length == 0: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: "No texture or resource packs installed.";
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.texture-packs.length > 0: tp-list-scope := FocusScope {
+                                vertical-stretch: 1;
+                                property <bool> ctrl-down: false;
+                                property <bool> shift-down: false;
+
+                                key-pressed(ev) => {
+                                    self.ctrl-down = ev.modifiers.control;
+                                    self.shift-down = ev.modifiers.shift;
+                                    if (ev.modifiers.control && (ev.text == "a" || ev.text == "A")) {
+                                        root.content-select-all("resourcepacks");
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Delete) {
+                                        root.content-delete-selected("resourcepacks");
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.UpArrow) {
+                                        root.content-navigate("resourcepacks", -1, ev.modifiers.shift);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.DownArrow) {
+                                        root.content-navigate("resourcepacks", 1, ev.modifiers.shift);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Escape) {
+                                        root.content-clear-selection("resourcepacks");
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                                key-released(ev) => {
+                                    self.ctrl-down = ev.modifiers.control;
+                                    self.shift-down = ev.modifiers.shift;
+                                    reject
+                                }
+
+                                ListView {
+                                    width: parent.width;
+                                    height: parent.height;
+
+                                    for pk[idx] in root.texture-packs: Rectangle {
+                                        height: 50px;
+                                        background: (pk.selected || pk.file-name == root.selected-texture-pack)
+                                            ? (pk.incompatible ? #ef444438 : Theme.accent-muted)
+                                            : tp-touch.has-hover
+                                                ? (pk.incompatible ? #ef44442a : Theme.bg-interactive)
+                                                : (pk.incompatible ? #ef44441a : transparent);
+
+                                        if pk.selected || pk.file-name == root.selected-texture-pack: Rectangle {
+                                            x: 0px;
+                                            width: 3px;
+                                            height: parent.height;
+                                            background: pk.incompatible ? Theme.danger : Theme.accent;
+                                        }
+
+                                        tp-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                tp-list-scope.focus();
+                                                root.content-item-clicked("resourcepacks", idx, tp-list-scope.ctrl-down, tp-list-scope.shift-down);
+                                            }
+                                        }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-md;
+                                        padding-right: Theme.space-md;
+                                        spacing: Theme.space-sm;
+
+                                        VerticalLayout {
+                                            width: 32px;
+                                            alignment: center;
+                                            if pk.has-icon: Image {
+                                                source: pk.icon;
+                                                width: 28px;
+                                                height: 28px;
+                                                image-fit: cover;
+                                            }
+                                            if !pk.has-icon: Image {
+                                                source: pk.provider == "Modrinth"
+                                                    ? @image-url("../../assets/providers/modrinth.svg")
+                                                    : pk.provider == "CurseForge"
+                                                        ? @image-url("../../assets/providers/curseforge.svg")
+                                                        : @image-url("../../assets/icons/palette.svg");
+                                                width: 24px;
+                                                height: 24px;
+                                                image-fit: contain;
+                                                colorize: pk.provider == "Local" ? Theme.icon-secondary : transparent;
+                                            }
+                                        }
+
+                                        HorizontalLayout {
+                                            horizontal-stretch: 2;
+                                            spacing: 6px;
+                                            alignment: start;
+
+                                            Text {
+                                                text: pk.display-name;
+                                                font-size: Theme.font-md;
+                                                font-weight: 600;
+                                                color: pk.incompatible ? Theme.danger : Theme.text-primary;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+
+                                            if pk.incompatible: VerticalLayout {
+                                                width: 16px;
+                                                alignment: center;
+                                                Image {
+                                                    source: @image-url("../../assets/icons/x.svg");
+                                                    width: 14px;
+                                                    height: 14px;
+                                                    colorize: Theme.danger;
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            text: pk.version-or-format;
+                                            font-size: Theme.font-xs;
+                                            color: pk.incompatible ? Theme.danger : Theme.text-secondary;
+                                            width: 108px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: pk.last-modified;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 104px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: pk.provider;
+                                            font-size: Theme.font-xs;
+                                            color: pk.provider == "Modrinth" || pk.provider == "CurseForge"
+                                                ? Theme.accent
+                                                : Theme.text-secondary;
+                                            width: 76px;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    // Tooltip informativo ao passar o cursor sobre um pack incompatível
+                                    if pk.incompatible && tp-touch.has-hover && pk.incompatibility-reason != "": Rectangle {
+                                        x: 56px;
+                                        y: 2px;
+                                        height: 22px;
+                                        width: min(parent.width - 72px, tp-tip-txt.preferred-width + 16px);
+                                        border-radius: Theme.radius-sm;
+                                        background: Theme.bg-primary;
+                                        border-width: 1px;
+                                        border-color: Theme.danger;
+                                        drop-shadow-blur: 6px;
+                                        drop-shadow-color: #00000040;
+
+                                        tp-tip-txt := Text {
+                                            x: 8px;
+                                            width: parent.width - 16px;
+                                            height: parent.height;
+                                            text: pk.incompatibility-reason;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-primary;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Painel compacto de detalhes do resource pack selecionado
+                    if root.selected-texture-pack != "": Rectangle {
+                        height: 76px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        HorizontalLayout {
+                            padding: Theme.space-sm;
+                            spacing: Theme.space-md;
+
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-primary;
+                                border-width: 1px;
+                                border-color: Theme.border-subtle;
+                                clip: true;
+
+                                if root.selected-texture-pack-has-icon: Image {
+                                    width: 56px;
+                                    height: 56px;
+                                    source: root.selected-texture-pack-icon;
+                                    image-fit: cover;
+                                }
+                                if !root.selected-texture-pack-has-icon: Image {
+                                    x: 14px;
+                                    y: 14px;
+                                    width: 28px;
+                                    height: 28px;
+                                    source: root.selected-texture-pack-provider == "Modrinth"
+                                        ? @image-url("../../assets/providers/modrinth.svg")
+                                        : root.selected-texture-pack-provider == "CurseForge"
+                                            ? @image-url("../../assets/providers/curseforge.svg")
+                                            : @image-url("../../assets/icons/palette.svg");
+                                    image-fit: contain;
+                                    colorize: root.selected-texture-pack-provider == "Local" ? Theme.icon-secondary : transparent;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 4px;
+
+                                HorizontalLayout {
+                                    spacing: 5px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        height: 20px;
+                                        width: tp-link-txt.preferred-width;
+
+                                        tp-link-touch := TouchArea {
+                                            enabled: root.selected-texture-pack-url != "";
+                                            mouse-cursor: root.selected-texture-pack-url != "" ? pointer : default;
+                                            clicked => {
+                                                if (root.selected-texture-pack-url != "") {
+                                                    root.open-url-clicked(root.selected-texture-pack-url);
+                                                }
+                                            }
+                                        }
+
+                                        tp-link-txt := Text {
+                                            text: root.selected-texture-pack-name != "" ? root.selected-texture-pack-name : root.selected-texture-pack;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: root.selected-texture-pack-url != "" ? Theme.accent : Theme.text-primary;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+
+                                        if root.selected-texture-pack-url != "": Rectangle {
+                                            y: parent.height - 2px;
+                                            height: 1px;
+                                            width: parent.width;
+                                            background: tp-link-touch.has-hover ? Theme.accent-hover : Theme.accent;
+                                        }
+                                    }
+
+                                    if root.selected-texture-pack-author != "": Text {
+                                        text: "by " + root.selected-texture-pack-author;
+                                        font-size: Theme.font-sm;
+                                        color: Theme.text-secondary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                Text {
+                                    text: root.selected-texture-pack-description != ""
+                                        ? root.selected-texture-pack-description
+                                        : "Local resource pack (" + root.selected-texture-pack + ")";
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    // Barra de pesquisa abaixo da lista
+                    CrabTextInput {
+                        text <=> root.texture-pack-search;
+                        placeholder: "Search installed resource packs...";
+                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        has-leading-icon: true;
+                        edited => { root.refresh-texture-packs-clicked(); }
+                    }
+                }
+
+                // Página 3: Shader Packs (mesma estrutura visual e funcional da aba Mods)
+                if root.active-page == 3: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    if !root.has-shader-mod: Rectangle {
+                        height: 28px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.warning-bg;
+                        border-width: 1px;
+                        border-color: Theme.warning-border;
+                        HorizontalLayout {
+                            padding-left: Theme.space-sm;
+                            padding-right: Theme.space-sm;
+                            Text {
+                                text: "No known shader mod (Iris / Oculus) detected in this instance. You can still download or add shaders.";
+                                font-size: Theme.font-xs;
+                                color: Theme.warning-text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+
+                    // Tabela principal de shader packs
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            Rectangle {
+                                height: 26px;
+                                background: Theme.bg-interactive;
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-sm;
+
+                                    Text { text: "Icon"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 32px; vertical-alignment: center; }
+                                    Text { text: "Name"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 2; vertical-alignment: center; }
+                                    Text { text: "Version"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 108px; vertical-alignment: center; }
+                                    Text { text: "Last Modified"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 104px; vertical-alignment: center; }
+                                    Text { text: "Provider"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 76px; vertical-alignment: center; }
+                                }
+                            }
+
+                            if root.shader-packs.length == 0: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: "No shader packs installed in .minecraft/shaderpacks/.";
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.shader-packs.length > 0: sp-list-scope := FocusScope {
+                                vertical-stretch: 1;
+                                property <bool> ctrl-down: false;
+                                property <bool> shift-down: false;
+
+                                key-pressed(ev) => {
+                                    self.ctrl-down = ev.modifiers.control;
+                                    self.shift-down = ev.modifiers.shift;
+                                    if (ev.modifiers.control && (ev.text == "a" || ev.text == "A")) {
+                                        root.content-select-all("shaderpacks");
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Delete) {
+                                        root.content-delete-selected("shaderpacks");
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.UpArrow) {
+                                        root.content-navigate("shaderpacks", -1, ev.modifiers.shift);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.DownArrow) {
+                                        root.content-navigate("shaderpacks", 1, ev.modifiers.shift);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Escape) {
+                                        root.content-clear-selection("shaderpacks");
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                                key-released(ev) => {
+                                    self.ctrl-down = ev.modifiers.control;
+                                    self.shift-down = ev.modifiers.shift;
+                                    reject
+                                }
+
+                                ListView {
+                                    width: parent.width;
+                                    height: parent.height;
+
+                                    for sp[idx] in root.shader-packs: Rectangle {
+                                        height: 50px;
+                                        background: (sp.selected || sp.file-name == root.selected-shader-pack)
+                                            ? Theme.accent-muted
+                                            : sp-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                        if sp.selected || sp.file-name == root.selected-shader-pack: Rectangle {
+                                            x: 0px;
+                                            width: 3px;
+                                            height: parent.height;
+                                            background: Theme.accent;
+                                        }
+
+                                        sp-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                sp-list-scope.focus();
+                                                root.content-item-clicked("shaderpacks", idx, sp-list-scope.ctrl-down, sp-list-scope.shift-down);
+                                            }
+                                        }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-md;
+                                        padding-right: Theme.space-md;
+                                        spacing: Theme.space-sm;
+
+                                        VerticalLayout {
+                                            width: 32px;
+                                            alignment: center;
+                                            if sp.has-icon: Image {
+                                                source: sp.icon;
+                                                width: 28px;
+                                                height: 28px;
+                                                image-fit: cover;
+                                            }
+                                            if !sp.has-icon: Image {
+                                                source: sp.provider == "Modrinth"
+                                                    ? @image-url("../../assets/providers/modrinth.svg")
+                                                    : sp.provider == "CurseForge"
+                                                        ? @image-url("../../assets/providers/curseforge.svg")
+                                                        : @image-url("../../assets/icons/layers.svg");
+                                                width: 24px;
+                                                height: 24px;
+                                                image-fit: contain;
+                                                colorize: sp.provider == "Local" ? Theme.icon-secondary : transparent;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: sp.display-name;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: Theme.text-primary;
+                                            horizontal-stretch: 2;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: sp.version-or-format;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 108px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: sp.last-modified;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 104px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: sp.provider;
+                                            font-size: Theme.font-xs;
+                                            color: sp.provider == "Modrinth" || sp.provider == "CurseForge"
+                                                ? Theme.accent
+                                                : Theme.text-secondary;
+                                            width: 76px;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Painel compacto de detalhes do shader pack selecionado
+                    if root.selected-shader-pack != "": Rectangle {
+                        height: 76px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        HorizontalLayout {
+                            padding: Theme.space-sm;
+                            spacing: Theme.space-md;
+
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-primary;
+                                border-width: 1px;
+                                border-color: Theme.border-subtle;
+                                clip: true;
+
+                                if root.selected-shader-pack-has-icon: Image {
+                                    width: 56px;
+                                    height: 56px;
+                                    source: root.selected-shader-pack-icon;
+                                    image-fit: cover;
+                                }
+                                if !root.selected-shader-pack-has-icon: Image {
+                                    x: 14px;
+                                    y: 14px;
+                                    width: 28px;
+                                    height: 28px;
+                                    source: root.selected-shader-pack-provider == "Modrinth"
+                                        ? @image-url("../../assets/providers/modrinth.svg")
+                                        : root.selected-shader-pack-provider == "CurseForge"
+                                            ? @image-url("../../assets/providers/curseforge.svg")
+                                            : @image-url("../../assets/icons/layers.svg");
+                                    image-fit: contain;
+                                    colorize: root.selected-shader-pack-provider == "Local" ? Theme.icon-secondary : transparent;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 4px;
+
+                                HorizontalLayout {
+                                    spacing: 5px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        height: 20px;
+                                        width: sp-link-txt.preferred-width;
+
+                                        sp-link-touch := TouchArea {
+                                            enabled: root.selected-shader-pack-url != "";
+                                            mouse-cursor: root.selected-shader-pack-url != "" ? pointer : default;
+                                            clicked => {
+                                                if (root.selected-shader-pack-url != "") {
+                                                    root.open-url-clicked(root.selected-shader-pack-url);
+                                                }
+                                            }
+                                        }
+
+                                        sp-link-txt := Text {
+                                            text: root.selected-shader-pack-name != "" ? root.selected-shader-pack-name : root.selected-shader-pack;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: root.selected-shader-pack-url != "" ? Theme.accent : Theme.text-primary;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+
+                                        if root.selected-shader-pack-url != "": Rectangle {
+                                            y: parent.height - 2px;
+                                            height: 1px;
+                                            width: parent.width;
+                                            background: sp-link-touch.has-hover ? Theme.accent-hover : Theme.accent;
+                                        }
+                                    }
+
+                                    if root.selected-shader-pack-author != "": Text {
+                                        text: "by " + root.selected-shader-pack-author;
+                                        font-size: Theme.font-sm;
+                                        color: Theme.text-secondary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                Text {
+                                    text: root.selected-shader-pack-description != ""
+                                        ? root.selected-shader-pack-description
+                                        : "Local shader pack (" + root.selected-shader-pack + ")";
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    // Barra de pesquisa abaixo da lista
+                    CrabTextInput {
+                        text <=> root.shader-pack-search;
+                        placeholder: "Search installed shader packs...";
+                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        has-leading-icon: true;
+                        edited => { root.refresh-shader-packs-clicked(); }
+                    }
+                }
+
+                // Página 4: Worlds
+                if root.active-page == 4: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        if root.worlds.length == 0: Text {
+                            text: "No worlds found in saves/.";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        if root.worlds.length > 0: ListView {
+                            for w in root.worlds: Rectangle {
+                                height: 54px;
+                                background: w.folder-name == root.selected-world-folder
+                                    ? Theme.accent-muted
+                                    : w-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                w-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.selected-world-folder = w.folder-name; }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-md;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        if w.has-icon: Image {
+                                            source: w.icon;
+                                            width: 42px;
+                                            height: 42px;
+                                            image-fit: cover;
+                                        }
+                                        if !w.has-icon: Image {
+                                            source: @image-url("../../assets/icons/cube.svg");
+                                            width: 36px;
+                                            height: 36px;
+                                            colorize: Theme.accent;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        Text {
+                                            text: w.display-name;
+                                            font-size: Theme.font-sm;
+                                            font-weight: 600;
+                                            color: w.folder-name == root.selected-world-folder ? Theme.accent : Theme.text-primary;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: w.game-mode
+                                                + (w.mc-version != "" ? " • " + w.mc-version : "")
+                                                + (w.last-modified != "" ? " • " + w.last-modified : "");
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            overflow: elide;
+                                        }
+                                    }
+
+                                    Text {
+                                        text: w.size-display;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    CrabTextInput {
+                        text <=> root.world-search;
+                        placeholder: "Search worlds...";
+                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        has-leading-icon: true;
+                        edited => { root.refresh-worlds-clicked(); }
+                    }
+                }
+
+                // Página 5: Servers (servers.dat NBT)
+                if root.active-page == 5: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        if root.servers.length == 0: Text {
+                            text: "No multiplayer servers registered in servers.dat.";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        if root.servers.length > 0: ListView {
+                            for srv in root.servers: Rectangle {
+                                height: 48px;
+                                background: srv.index == root.selected-server-index
+                                    ? Theme.accent-muted
+                                    : srv-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                srv-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.selected-server-index = srv.index;
+                                        root.server-name-input = srv.name;
+                                        root.server-ip-input = srv.ip;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-md;
+
+                                    VerticalLayout {
+                                        width: 34px;
+                                        alignment: center;
+                                        if srv.has-icon: Image {
+                                            source: srv.icon;
+                                            width: 32px;
+                                            height: 32px;
+                                            image-fit: cover;
+                                        }
+                                        if !srv.has-icon: Image {
+                                            source: @image-url("../../assets/icons/cube.svg");
+                                            width: 26px;
+                                            height: 26px;
+                                            colorize: Theme.icon-secondary;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        Text {
+                                            text: srv.name;
+                                            font-size: Theme.font-sm;
+                                            font-weight: 600;
+                                            color: srv.index == root.selected-server-index ? Theme.accent : Theme.text-primary;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: srv.ip;
+                                            font-size: Theme.font-xs;
+                                            font-family: Theme.console-font-family;
+                                            color: Theme.text-secondary;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    y: parent.height - 1px;
+                                    height: 1px;
+                                    width: parent.width;
+                                    background: Theme.border-subtle;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Página 6: Screenshots (Grid responsivo com miniaturas assíncronas)
+                if root.active-page == 6: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    Text {
+                        text: "Screenshots";
+                        font-size: Theme.font-lg;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        if root.screenshots.length == 0: Text {
+                            text: "No screenshots found in screenshots/.";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        if root.screenshots.length > 0: ss-flick := Flickable {
+                            property <length> tile-w: 176px;
+                            property <length> tile-h: 132px;
+                            property <length> gap: 12px;
+                            property <int> cols: max(1, floor((self.width - 16px) / (self.tile-w + self.gap)));
+                            content-width: self.width;
+                            content-height: ceil(root.screenshots.length / self.cols) * (self.tile-h + self.gap) + 16px;
+
+                            for ss[idx] in root.screenshots: Rectangle {
+                                x: 8px + mod(idx, ss-flick.cols) * (ss-flick.tile-w + ss-flick.gap);
+                                y: 8px + floor(idx / ss-flick.cols) * (ss-flick.tile-h + ss-flick.gap);
+                                width: ss-flick.tile-w;
+                                height: ss-flick.tile-h;
+                                border-radius: Theme.radius-sm;
+                                border-width: ss.file-name == root.selected-screenshot-file ? 1px : 0px;
+                                border-color: Theme.accent;
+                                background: ss.file-name == root.selected-screenshot-file
+                                    ? Theme.accent-muted
+                                    : ss-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                ss-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.selected-screenshot-file = ss.file-name; }
+                                    double-clicked => { root.open-screenshot-clicked(ss.file-name); }
+                                }
+
+                                VerticalLayout {
+                                    padding: 6px;
+                                    spacing: 4px;
+
+                                    Rectangle {
+                                        vertical-stretch: 1;
+                                        border-radius: Theme.radius-sm;
+                                        background: Theme.bg-primary;
+                                        clip: true;
+
+                                        if ss.has-thumbnail: Image {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            source: ss.thumbnail;
+                                            image-fit: cover;
+                                        }
+                                    }
+
+                                    Text {
+                                        text: ss.display-name;
+                                        font-size: Theme.font-xs;
+                                        font-weight: ss.file-name == root.selected-screenshot-file ? 600 : 400;
+                                        color: ss.file-name == root.selected-screenshot-file ? Theme.accent : Theme.text-primary;
+                                        horizontal-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Página 7: Logs (histórico persistente por sessão com fonte monoespaçada e destaque INFO/WARN/ERROR)
+                if root.active-page == 7: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-xs;
+                        Text {
+                            text: "Logs";
+                            font-size: Theme.font-lg;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                        CrabButton {
+                            text: "Copy";
+                            icon: @image-url("../../assets/icons/copy.svg");
+                            has-icon: true;
+                            variant: "secondary";
+                            enabled: root.selected-log-file != "";
+                            clicked => { root.copy-log-clicked(root.selected-log-file); }
+                        }
+                        CrabButton {
+                            text: "Export";
+                            icon: @image-url("../../assets/icons/download.svg");
+                            has-icon: true;
+                            variant: "secondary";
+                            enabled: root.selected-log-file != "";
+                            clicked => { root.export-log-clicked(root.selected-log-file); }
+                        }
+                        CrabButton {
+                            text: "Delete";
+                            icon: @image-url("../../assets/icons/trash.svg");
+                            has-icon: true;
+                            variant: "danger";
+                            enabled: root.selected-log-file != "";
+                            clicked => { root.delete-log-clicked(root.selected-log-file); }
+                        }
+                        CrabButton {
+                            text: "Open Folder";
+                            icon: @image-url("../../assets/icons/folder.svg");
+                            has-icon: true;
+                            variant: "secondary";
+                            clicked => { root.open-logs-folder-clicked(); }
+                        }
+                        CrabButton {
+                            text: "";
+                            icon: @image-url("../../assets/icons/refresh.svg");
+                            has-icon: true;
+                            variant: "secondary";
+                            clicked => { root.refresh-logs-clicked(); }
+                        }
+                    }
+
+                    CrabTextInput {
+                        text <=> root.log-search-query;
+                        placeholder: "Search log lines...";
+                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        has-leading-icon: true;
+                        edited => { root.select-log-file(root.selected-log-file); }
+                    }
+
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        // Lista de sessões de log
+                        Rectangle {
+                            width: 210px;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            if root.session-logs.length == 0: Text {
+                                text: "No logs found.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            if root.session-logs.length > 0: ListView {
+                                for lg in root.session-logs: Rectangle {
+                                    height: 44px;
+                                    background: lg.file-name == root.selected-log-file
+                                        ? Theme.accent-muted
+                                        : lg-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                    lg-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            root.selected-log-file = lg.file-name;
+                                            root.select-log-file(lg.file-name);
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        padding-left: Theme.space-sm;
+                                        padding-right: Theme.space-sm;
+                                        alignment: center;
+                                        Text {
+                                            text: lg.file-name;
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: lg.file-name == root.selected-log-file ? Theme.accent : Theme.text-primary;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: lg.timestamp + " • " + lg.size-display;
+                                            font-size: 10px;
+                                            color: Theme.text-secondary;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Visualizador monoespaçado com cores INFO/WARN/ERROR
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.console-bg;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            if root.session-log-lines.length == 0: Text {
+                                text: "Select a log session to inspect output.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            if root.session-log-lines.length > 0: ListView {
+                                for ln in root.session-log-lines: Rectangle {
+                                    height: 20px;
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-sm;
+                                        padding-right: Theme.space-sm;
+                                        Text {
+                                            text: ln.text;
+                                            font-family: Theme.console-font-family;
+                                            font-size: Theme.font-xs;
+                                            color: ln.level == "ERROR"
+                                                ? Theme.error-text
+                                                : ln.level == "WARN"
+                                                    ? Theme.warning-text
+                                                    : Theme.text-primary;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Página 8: Settings (4 abas secundárias: General | Java | Console | Tweaks)
+                if root.active-page == 8: VerticalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    padding: Theme.space-lg;
+                    spacing: Theme.space-md;
+
+                    // Cabeçalho Settings + Reset to Global + Open Global Settings
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: "Instance Settings";
+                                font-size: Theme.font-xl;
+                                font-weight: 600;
+                                color: Theme.text-primary;
+                            }
+                            Text {
+                                text: "Unchecked sections inherit effective global launcher settings automatically.";
+                                font-size: Theme.font-xs;
+                                color: Theme.text-secondary;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                spacing: Theme.space-xs;
+                                CrabButton {
+                                    text: "Reset to Global";
+                                    icon: @image-url("../../assets/icons/refresh.svg");
+                                    has-icon: true;
+                                    variant: "secondary";
+                                    enabled: root.active-override-count > 0;
+                                    clicked => {
+                                        if (root.active-override-count > 1) {
+                                            root.show-reset-confirm = true;
+                                        } else {
+                                            root.reset-to-global-clicked();
+                                        }
+                                    }
+                                }
+                                CrabButton {
+                                    text: "Open Global Settings";
+                                    icon: @image-url("../../assets/icons/settings.svg");
+                                    has-icon: true;
+                                    variant: "secondary";
+                                    clicked => { root.open-global-settings-clicked(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Confirmação inline ao redefinir múltiplas sobrescritas para o padrão global
+                    if root.show-reset-confirm: Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: Theme.warning-bg;
+                        border-width: 1px;
+                        border-color: Theme.warning-border;
+
+                        HorizontalLayout {
+                            padding: Theme.space-sm;
+                            spacing: Theme.space-sm;
+
+                            Text {
+                                text: "Reset all " + root.active-override-count + " custom instance overrides back to global defaults?";
+                                font-size: Theme.font-xs;
+                                color: Theme.warning-text;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+
+                            CrabButton {
+                                text: "Cancel";
+                                variant: "secondary";
+                                clicked => { root.show-reset-confirm = false; }
+                            }
+                            CrabButton {
+                                text: "Reset All";
+                                variant: "danger";
+                                clicked => {
+                                    root.show-reset-confirm = false;
+                                    root.reset-to-global-clicked();
+                                }
+                            }
+                        }
+                    }
+
+                    // Barra de abas secundárias (General | Java | Console | Tweaks)
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+
+                        CrabButton {
+                            text: "General";
+                            icon: @image-url("../../assets/icons/settings.svg");
+                            has-icon: true;
+                            variant: root.settings-subtab == 0 ? "primary" : "secondary";
+                            clicked => { root.settings-subtab = 0; }
+                        }
+
+                        CrabButton {
+                            text: "Java";
+                            icon: @image-url("../../assets/icons/coffee.svg");
+                            has-icon: true;
+                            variant: root.settings-subtab == 1 ? "primary" : "secondary";
+                            clicked => { root.settings-subtab = 1; }
+                        }
+
+                        CrabButton {
+                            text: "Console";
+                            icon: @image-url("../../assets/icons/terminal.svg");
+                            has-icon: true;
+                            variant: root.settings-subtab == 2 ? "primary" : "secondary";
+                            clicked => { root.settings-subtab = 2; }
+                        }
+
+                        CrabButton {
+                            text: "Tweaks";
+                            icon: @image-url("../../assets/icons/sliders-horizontal.svg");
+                            has-icon: true;
+                            variant: root.settings-subtab == 3 ? "primary" : "secondary";
+                            clicked => { root.settings-subtab = 3; }
+                        }
+                    }
+
+                    // Conteúdo rolável
+                    Flickable {
+                        vertical-stretch: 1;
+                        horizontal-stretch: 1;
+                        content-width: self.width;
+                        content-height: settings-inner.preferred-height + 20px;
+
+                        settings-inner := VerticalLayout {
+                            width: parent.width;
+                            spacing: 12px;
+                            alignment: start;
+
+                            // Sub-aba 0: General (Instance Info + Game Window + Launcher Behavior)
+                            if root.settings-subtab == 0: VerticalLayout {
+                                horizontal-stretch: 1;
+                                max-width: 99999px;
+                                spacing: 12px;
+
+                                SettingsSection {
+                                    title: "Instance Information";
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-md;
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            spacing: 4px;
+                                            Text { text: "Instance Name"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabTextInput { text <=> root.instance-name; placeholder: "Instance name"; edited => { root.save-clicked(); } }
+                                        }
+                                        VerticalLayout {
+                                            width: 220px;
+                                            spacing: 4px;
+                                            Text { text: "Group"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabDropdown {
+                                                height: Theme.button-height;
+                                                options: root.group-dropdown-options;
+                                                selected-id <=> root.selected-group-id;
+                                                selected-label: root.group-name-display;
+                                                selected(gid) => { root.group-selected(gid); }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsSection {
+                                    title: "Game Window";
+
+                                    CrabCheckbox {
+                                        label: "Override global window settings";
+                                        checked <=> root.override-window;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    CrabCheckbox {
+                                        label: "Start Minecraft in Fullscreen";
+                                        checked <=> root.start-fullscreen;
+                                        enabled: root.override-window;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    CrabCheckbox {
+                                        label: "Use Custom Window Resolution";
+                                        checked <=> root.use-custom-resolution;
+                                        enabled: root.override-window && !root.start-fullscreen;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        Text { text: "Resolution Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                        CrabDropdown {
+                                            width: 260px;
+                                            options: root.resolution-preset-options;
+                                            selected-id <=> root.resolution-preset-id;
+                                            selected-label: root.resolution-preset-label;
+                                            enabled: root.override-window && root.use-custom-resolution && !root.start-fullscreen;
+                                            selected(id) => { root.resolution-preset-selected(id); }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-md;
+                                        alignment: start;
+                                        VerticalLayout {
+                                            width: 140px;
+                                            spacing: 4px;
+                                            Text { text: "Width (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabTextInput {
+                                                text <=> root.window-width;
+                                                enabled: root.override-window && root.use-custom-resolution && !root.start-fullscreen;
+                                                placeholder: "854";
+                                                edited(_) => { root.resolution-fields-edited(); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            width: 140px;
+                                            spacing: 4px;
+                                            Text { text: "Height (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabTextInput {
+                                                text <=> root.window-height;
+                                                enabled: root.override-window && root.use-custom-resolution && !root.start-fullscreen;
+                                                placeholder: "480";
+                                                edited(_) => { root.resolution-fields-edited(); }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsSection {
+                                    title: "Launcher Behavior";
+
+                                    CrabCheckbox {
+                                        label: "Override Global Launcher Behavior";
+                                        checked <=> root.override-launcher-behavior;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    Text {
+                                        text: "When Minecraft Starts";
+                                        font-size: Theme.font-xs;
+                                        font-weight: 600;
+                                        color: Theme.text-secondary;
+                                    }
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        CrabRadioButton {
+                                            label: "Keep Launcher Open";
+                                            selected: root.on-launch-behavior == 0;
+                                            enabled: root.override-launcher-behavior;
+                                            clicked => { root.on-launch-behavior = 0; }
+                                        }
+                                        CrabRadioButton {
+                                            label: "Minimize Launcher";
+                                            selected: root.on-launch-behavior == 1;
+                                            enabled: root.override-launcher-behavior;
+                                            clicked => { root.on-launch-behavior = 1; }
+                                        }
+                                        CrabRadioButton {
+                                            label: "Hide Launcher";
+                                            selected: root.on-launch-behavior == 2;
+                                            enabled: root.override-launcher-behavior;
+                                            clicked => { root.on-launch-behavior = 2; }
+                                        }
+                                        CrabRadioButton {
+                                            label: "Close Launcher";
+                                            selected: root.on-launch-behavior == 3;
+                                            enabled: root.override-launcher-behavior;
+                                            clicked => { root.on-launch-behavior = 3; }
+                                        }
+                                    }
+
+                                    Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                                    CrabCheckbox {
+                                        label: "Reopen Launcher After Game Exit";
+                                        checked <=> root.reopen-on-exit;
+                                        enabled: root.override-launcher-behavior && root.on-launch-behavior != 0;
+                                        toggled => { root.save-clicked(); }
+                                    }
+                                    CrabCheckbox {
+                                        label: "Reopen Launcher After Game Crash";
+                                        checked <=> root.reopen-on-crash;
+                                        enabled: root.override-launcher-behavior && root.on-launch-behavior != 0;
+                                        toggled => { root.save-clicked(); }
+                                    }
+                                    CrabCheckbox {
+                                        label: "Reopen Launcher After Game Is Killed";
+                                        checked <=> root.reopen-on-kill;
+                                        enabled: root.override-launcher-behavior && root.on-launch-behavior != 0;
+                                        toggled => { root.save-clicked(); }
+                                    }
+                                }
+                            }
+
+                            // Sub-aba 1: Java (Java Installation, Memory, Java Arguments)
+                            if root.settings-subtab == 1: VerticalLayout {
+                                horizontal-stretch: 1;
+                                max-width: 99999px;
+                                spacing: 12px;
+
+                                SettingsSection {
+                                    title: "Java Installation";
+
+                                    CrabCheckbox {
+                                        label: "Override global Java installation";
+                                        checked <=> root.override-java;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        Text { text: "Java Executable"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                        CrabTextInput {
+                                            text <=> root.java-path;
+                                            enabled: root.override-java;
+                                            placeholder: "Select or enter path to java executable...";
+                                            edited => { root.save-clicked(); }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-xs;
+                                        alignment: start;
+
+                                        CrabButton {
+                                            text: "Detect";
+                                            icon: @image-url("../../assets/icons/scan-search.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            enabled: root.override-java;
+                                            clicked => { root.detect-java-clicked(); }
+                                        }
+
+                                        CrabButton {
+                                            text: "Browse";
+                                            icon: @image-url("../../assets/icons/folder.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            enabled: root.override-java;
+                                            clicked => { root.browse-java-clicked(); }
+                                        }
+
+                                        CrabButton {
+                                            text: "Test Settings";
+                                            icon: @image-url("../../assets/icons/flask-conical.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            enabled: root.override-java && root.java-path != "";
+                                            clicked => { root.test-java-clicked(root.java-path); }
+                                        }
+
+                                        CrabButton {
+                                            text: "Open Java Downloader";
+                                            icon: @image-url("../../assets/icons/download.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-java-downloader-clicked(); }
+                                        }
+                                    }
+
+                                    if root.java-test-result != "": Text {
+                                        text: root.java-test-result;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        wrap: word-wrap;
+                                    }
+                                }
+
+                                SettingsSection {
+                                    title: "Memory";
+
+                                    CrabCheckbox {
+                                        label: "Override global memory settings";
+                                        checked <=> root.override-memory;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        Text { text: "Memory Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                        CrabDropdown {
+                                            width: 260px;
+                                            options: root.memory-preset-options;
+                                            selected-id <=> root.memory-preset-id;
+                                            selected-label: root.memory-preset-label;
+                                            enabled: root.override-memory;
+                                            selected(id) => { root.memory-preset-selected(id); }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-lg;
+                                        alignment: start;
+
+                                        VerticalLayout {
+                                            width: 170px;
+                                            spacing: 4px;
+                                            Text { text: "Minimum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabTextInput {
+                                                text <=> root.min-memory-mb;
+                                                enabled: root.override-memory;
+                                                placeholder: "512";
+                                                edited(_) => { root.memory-fields-edited(); }
+                                            }
+                                        }
+
+                                        VerticalLayout {
+                                            width: 170px;
+                                            spacing: 4px;
+                                            Text { text: "Maximum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabTextInput {
+                                                text <=> root.max-memory-mb;
+                                                enabled: root.override-memory;
+                                                placeholder: "2048";
+                                                edited(_) => { root.memory-fields-edited(); }
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "JVM flags: -Xms" + root.min-memory-mb + "M  -Xmx" + root.max-memory-mb + "M";
+                                        font-family: Theme.console-font-family;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                    }
+
+                                    if root.memory-warning != "": Text {
+                                        text: root.memory-warning;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.warning-text;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if root.system-ram-display != "": Text {
+                                        text: "Total System Memory: " + root.system-ram-display
+                                            + (root.system-avail-ram-display != "" ? "  •  Available: " + root.system-avail-ram-display : "");
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                    }
+                                }
+
+                                SettingsSection {
+                                    title: "Java Arguments";
+
+                                    CrabCheckbox {
+                                        label: "Override global JVM arguments";
+                                        checked <=> root.override-jvm-args;
+                                        toggled => { root.save-clicked(); }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-sm;
+                                        alignment: start;
+                                        VerticalLayout {
+                                            spacing: 4px;
+                                            Text { text: "Argument Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                            CrabDropdown {
+                                                width: 260px;
+                                                options: root.jvm-preset-options;
+                                                selected-id <=> root.jvm-preset-id;
+                                                selected-label: root.jvm-preset-label;
+                                                enabled: root.override-jvm-args;
+                                                selected(id) => { root.jvm-preset-selected(id); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            alignment: end;
+                                            CrabButton {
+                                                text: "Manage Presets...";
+                                                icon: @image-url("../../assets/icons/sliders-horizontal.svg");
+                                                has-icon: true;
+                                                variant: "secondary";
+                                                clicked => { root.manage-jvm-presets-clicked(); }
+                                            }
+                                        }
+                                    }
+
+                                    if root.jvm-preset-description != "": Text {
+                                        text: root.jvm-preset-description;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if root.jvm-preset-compat != "": Text {
+                                        text: "Compatibility: " + root.jvm-preset-compat;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    TextEdit {
+                                        height: 84px;
+                                        text <=> root.jvm-args;
+                                        enabled: root.override-jvm-args;
+                                        font-size: Theme.font-sm;
+                                        edited(_) => { root.jvm-args-edited(); }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-xs;
+                                        alignment: start;
+                                        CrabButton {
+                                            text: "Reset to Default";
+                                            icon: @image-url("../../assets/icons/refresh.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            enabled: root.override-jvm-args;
+                                            clicked => { root.jvm-preset-selected("default"); }
+                                        }
+                                        CrabButton {
+                                            text: "Test Arguments";
+                                            icon: @image-url("../../assets/icons/flask-conical.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            enabled: root.override-jvm-args;
+                                            clicked => {
+                                                root.test-jvm-args-clicked(
+                                                    root.override-java ? root.java-path : "",
+                                                    root.min-memory-mb,
+                                                    root.max-memory-mb,
+                                                    root.jvm-args
+                                                );
+                                            }
+                                        }
+                                        CrabButton {
+                                            text: "Copy Arguments";
+                                            icon: @image-url("../../assets/icons/copy.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => {
+                                                root.copy-jvm-args-clicked(
+                                                    "-Xms" + root.min-memory-mb + "M -Xmx" + root.max-memory-mb + "M " + root.jvm-args
+                                                );
+                                            }
+                                        }
+                                        CrabButton {
+                                            text: "Save as Preset";
+                                            icon: @image-url("../../assets/icons/save.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            enabled: root.override-jvm-args && root.jvm-args != "";
+                                            clicked => { root.save-as-jvm-preset-clicked(root.jvm-args); }
+                                        }
+                                    }
+
+                                    if root.jvm-test-result != "": Text {
+                                        text: root.jvm-test-result;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+
+                            // Sub-aba 2: Console
+                            if root.settings-subtab == 2: SettingsSection {
+                                title: "Console Behavior";
+
+                                CrabCheckbox {
+                                    label: "Override global console settings";
+                                    checked <=> root.override-console;
+                                    toggled => { root.save-clicked(); }
+                                }
+
+                                CrabCheckbox {
+                                    label: "Show console automatically on launch";
+                                    checked <=> root.show-console-on-launch;
+                                    enabled: root.override-console;
+                                    toggled => { root.save-clicked(); }
+                                }
+
+                                CrabCheckbox {
+                                    label: "Show console when Minecraft crashes";
+                                    checked <=> root.show-console-on-crash;
+                                    enabled: root.override-console;
+                                    toggled => { root.save-clicked(); }
+                                }
+
+                                CrabCheckbox {
+                                    label: "Close console on successful exit";
+                                    checked <=> root.close-console-on-exit;
+                                    enabled: root.override-console;
+                                    toggled => { root.save-clicked(); }
+                                }
+
+                                Text {
+                                    text: "Console typography, timestamps, log level colors and retention are inherited from Global Settings → Minecraft → Console.";
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            // Sub-aba 3: Tweaks (Instance Overrides)
+                            if root.settings-subtab == 3: SettingsSection {
+                                title: "Performance";
+
+                                CrabCheckbox {
+                                    label: "Override Global Performance Tweaks";
+                                    checked <=> root.override-tweaks;
+                                    toggled => { root.save-clicked(); }
+                                }
+
+                                if !root.is-linux: Text {
+                                    text: "Linux performance tweaks are only available on Linux.";
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Theme.space-sm;
+                                    CrabCheckbox {
+                                        horizontal-stretch: 1;
+                                        label: "Enable Feral GameMode";
+                                        checked <=> root.enable-gamemode;
+                                        enabled: root.override-tweaks && root.is-linux && root.gamemode-available;
+                                        toggled => { root.save-clicked(); }
+                                    }
+                                    Text {
+                                        text: root.gamemode-available
+                                            ? (root.enable-gamemode ? "Enabled" : "Available")
+                                            : root.gamemode-status;
+                                        font-size: Theme.font-xs;
+                                        color: root.gamemode-available ? Theme.success : Theme.text-secondary;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Theme.space-sm;
+                                    CrabCheckbox {
+                                        horizontal-stretch: 1;
+                                        label: "Enable MangoHud";
+                                        checked <=> root.enable-mangohud;
+                                        enabled: root.override-tweaks && root.is-linux && root.mangohud-available;
+                                        toggled => { root.save-clicked(); }
+                                    }
+                                    Text {
+                                        text: root.mangohud-available
+                                            ? (root.enable-mangohud ? "Enabled" : "Available")
+                                            : root.mangohud-status;
+                                        font-size: Theme.font-xs;
+                                        color: root.mangohud-available ? Theme.success : Theme.text-secondary;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: start;
+                                    CrabButton {
+                                        text: "Open MangoHud Configuration";
+                                        icon: @image-url("../../assets/icons/external-link.svg");
+                                        has-icon: true;
+                                        variant: "secondary";
+                                        enabled: root.is-linux;
+                                        clicked => { root.open-mangohud-config-clicked(); }
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    CrabCheckbox {
+                                        label: "Use Discrete GPU";
+                                        checked <=> root.use-discrete-gpu;
+                                        enabled: root.override-tweaks && root.is-linux && root.discrete-gpu-available;
+                                        toggled => { root.save-clicked(); }
+                                    }
+                                    Text {
+                                        text: root.gpu-detail;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        wrap: word-wrap;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    HorizontalLayout {
+                                        spacing: Theme.space-sm;
+                                        CrabCheckbox {
+                                            horizontal-stretch: 1;
+                                            label: "Use Zink";
+                                            checked <=> root.use-zink;
+                                            enabled: root.override-tweaks && root.is-linux;
+                                            toggled => { root.save-clicked(); }
+                                        }
+                                        Text {
+                                            text: root.zink-available
+                                                ? (root.use-zink ? "Enabled" : "Available")
+                                                : root.zink-status;
+                                            font-size: Theme.font-xs;
+                                            color: root.zink-available ? Theme.success : Theme.warning-text;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    Text {
+                                        text: "Runs OpenGL through Vulkan using Mesa Zink. Compatibility and performance may vary.";
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Painel direito contextual (visível nas páginas Version, Mods e Screenshots)
+            if root.active-page == 0 || root.active-page == 1 || root.active-page == 2 || root.active-page == 3 || root.active-page == 4 || root.active-page == 5 || root.active-page == 6: Rectangle {
+                width: 216px;
+                background: Theme.bg-secondary;
+
+                Rectangle {
+                    x: 0px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                if root.active-page == 0: Flickable {
+                    content-width: self.width;
+                    content-height: ver-actions.preferred-height + 8px;
+
+                    ver-actions := VerticalLayout {
+                        width: parent.width;
+                        padding: Theme.space-sm;
+                        spacing: 2px;
+                        alignment: start;
+
+                        CrabButton {
+                            text: "Change Version";
+                            icon: @image-url("../../assets/icons/layers.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running
+                                && (root.selected-component-uid == "net.minecraft"
+                                    || root.selected-component-uid == "org.lwjgl"
+                                    || root.selected-component-uid == "loader.fabric"
+                                    || root.selected-component-uid == "loader.forge"
+                                    || root.selected-component-uid == "loader.neoforge");
+                            align-left: true;
+                            clicked => { root.change-component-version-clicked(root.selected-component-uid); }
+                        }
+
+                        CrabButton {
+                            text: "Move Up";
+                            icon: @image-url("../../assets/icons/arrow-up.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: root.selected-component-uid != "" && !root.is-running;
+                            align-left: true;
+                            clicked => { root.move-component-up-clicked(root.selected-component-uid); }
+                        }
+
+                        CrabButton {
+                            text: "Move Down";
+                            icon: @image-url("../../assets/icons/arrow-down.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: root.selected-component-uid != "" && !root.is-running;
+                            align-left: true;
+                            clicked => { root.move-component-down-clicked(root.selected-component-uid); }
+                        }
+
+                        CrabButton {
+                            text: "Remove";
+                            icon: @image-url("../../assets/icons/trash.svg");
+                            has-icon: true;
+                            variant: "flat-danger";
+                            enabled: root.selected-component-uid != "" && !root.is-running;
+                            align-left: true;
+                            clicked => { root.remove-component-clicked(root.selected-component-uid); }
+                        }
+
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        CrabButton {
+                            text: "Customize";
+                            icon: @image-url("../../assets/icons/sliders-horizontal.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: root.selected-component-uid != "" && !root.is-running;
+                            align-left: true;
+                            clicked => { root.customize-component-clicked(root.selected-component-uid); }
+                        }
+
+                        CrabButton {
+                            text: "Edit";
+                            icon: @image-url("../../assets/icons/edit.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: root.selected-component-uid != "";
+                            align-left: true;
+                            clicked => { root.edit-component-clicked(root.selected-component-uid); }
+                        }
+
+                        CrabButton {
+                            text: "Revert";
+                            icon: @image-url("../../assets/icons/refresh.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: root.selected-component-uid != "" && !root.is-running;
+                            align-left: true;
+                            clicked => { root.revert-component-clicked(root.selected-component-uid); }
+                        }
+
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        CrabButton {
+                            text: "Install Loader";
+                            icon: @image-url("../../assets/icons/download.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.install-loader-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Add to Minecraft.jar";
+                            icon: @image-url("../../assets/icons/plus.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.add-to-mc-jar-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Replace Minecraft.jar";
+                            icon: @image-url("../../assets/icons/copy.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.replace-mc-jar-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Add Agents";
+                            icon: @image-url("../../assets/icons/wrench.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.add-agents-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Add Empty";
+                            icon: @image-url("../../assets/icons/plus.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.add-empty-component-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Import Components";
+                            icon: @image-url("../../assets/icons/download.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.import-components-clicked(); }
+                        }
+
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        CrabButton {
+                            text: "Open .minecraft";
+                            icon: @image-url("../../assets/icons/folder.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            align-left: true;
+                            clicked => { root.open-mc-folder-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Open Libraries";
+                            icon: @image-url("../../assets/icons/folder.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            align-left: true;
+                            clicked => { root.open-libraries-folder-clicked(); }
+                        }
+
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        CrabButton {
+                            text: "Reload";
+                            icon: @image-url("../../assets/icons/refresh.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            align-left: true;
+                            clicked => { root.reload-version-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Download All";
+                            icon: @image-url("../../assets/icons/download.svg");
+                            has-icon: true;
+                            variant: "ghost";
+                            enabled: !root.is-running;
+                            align-left: true;
+                            clicked => { root.download-all-clicked(); }
+                        }
+                    }
+                }
+
+                if root.active-page == 1: VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: 2px;
+                    alignment: start;
+
+                    CrabButton {
+                        text: "Download Mods";
+                        icon: @image-url("../../assets/icons/download.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.has-modloader;
+                        align-left: true;
+                        clicked => { root.download-mods-clicked(); }
+                    }
+
+                    // Split button: área principal executa Check for Updates; chevron abre dropdown
+                    Rectangle {
+                        height: Theme.button-height;
+                        border-radius: Theme.radius-sm;
+                        background: !root.has-modloader
+                            ? transparent
+                            : (upd-main-touch.has-hover || upd-chev-touch.has-hover || root.show-updates-menu)
+                                ? Theme.bg-interactive
+                                : transparent;
+                        opacity: root.has-modloader ? 1.0 : 0.45;
+
+                        HorizontalLayout {
+                            spacing: 0px;
+
+                            // Área principal (alinhada exatamente como CrabButton: padding-left Theme.space-md, spacing 8px)
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+
+                                upd-main-touch := TouchArea {
+                                    enabled: root.has-modloader;
+                                    mouse-cursor: root.has-modloader ? pointer : default;
+                                    clicked => {
+                                        root.show-updates-menu = false;
+                                        root.check-mod-updates-clicked();
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: 4px;
+                                    spacing: 8px;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Image {
+                                            source: @image-url("../../assets/icons/refresh.svg");
+                                            width: 14px;
+                                            height: 14px;
+                                            colorize: Theme.icon-primary;
+                                        }
+                                    }
+                                    Text {
+                                        text: "Check for Updates";
+                                        font-size: Theme.font-sm;
+                                        font-weight: 500;
+                                        color: Theme.text-primary;
+                                        horizontal-stretch: 1;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 1px;
+                                height: parent.height - 10px;
+                                y: 5px;
+                                background: Theme.border-subtle;
+                            }
+
+                            // Área do chevron (abre dropdown)
+                            Rectangle {
+                                width: 26px;
+                                background: transparent;
+
+                                upd-chev-touch := TouchArea {
+                                    enabled: root.has-modloader;
+                                    mouse-cursor: root.has-modloader ? pointer : default;
+                                    clicked => { root.show-updates-menu = !root.show-updates-menu; }
+                                }
+
+                                Image {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("../../assets/icons/chevron-down.svg");
+                                    width: 13px;
+                                    height: 13px;
+                                    colorize: Theme.icon-secondary;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.show-updates-menu && root.has-modloader: Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-primary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+
+                        VerticalLayout {
+                            padding: 4px;
+                            spacing: 2px;
+
+                            CrabButton {
+                                text: "Check for Updates";
+                                icon: @image-url("../../assets/icons/refresh.svg");
+                                has-icon: true;
+                                variant: "ghost";
+                                align-left: true;
+                                enabled: root.has-modloader;
+                                clicked => {
+                                    root.show-updates-menu = false;
+                                    root.check-mod-updates-clicked();
+                                }
+                            }
+
+                            CrabButton {
+                                text: "Verify Dependencies";
+                                icon: @image-url("../../assets/icons/puzzle.svg");
+                                has-icon: true;
+                                variant: "ghost";
+                                align-left: true;
+                                enabled: root.has-modloader;
+                                clicked => {
+                                    root.show-updates-menu = false;
+                                    root.verify-dependencies-clicked();
+                                }
+                            }
+                        }
+                    }
+
+                    CrabButton {
+                        text: "Change Version";
+                        icon: @image-url("../../assets/icons/layers.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-mod-file != "";
+                        align-left: true;
+                        clicked => { root.change-mod-version-clicked(root.selected-mod-file); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Add File";
+                        icon: @image-url("../../assets/icons/plus.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.has-modloader;
+                        align-left: true;
+                        clicked => { root.add-mod-file-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Remove";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        enabled: root.selected-mod-file != "";
+                        align-left: true;
+                        clicked => { root.remove-mod-clicked(root.selected-mod-file); }
+                    }
+
+                    CrabButton {
+                        text: "Enable / Disable";
+                        icon: @image-url("../../assets/icons/check.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-mod-file != "";
+                        align-left: true;
+                        clicked => { root.toggle-mod-clicked(root.selected-mod-file); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "View Homepage";
+                        icon: @image-url("../../assets/icons/external-link.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-mod-file != "";
+                        align-left: true;
+                        clicked => { root.view-mod-homepage-clicked(root.selected-mod-file); }
+                    }
+
+                    CrabButton {
+                        text: "Export List";
+                        icon: @image-url("../../assets/icons/copy.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.export-mods-list-clicked(); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Open Mods Folder";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.open-mods-folder-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Open Configs Folder";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.open-configs-folder-clicked(); }
+                    }
+                }
+
+                if root.active-page == 2: VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: 2px;
+                    alignment: start;
+
+                    CrabButton {
+                        text: "Download";
+                        icon: @image-url("../../assets/icons/download.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.download-texture-packs-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Check for Updates";
+                        icon: @image-url("../../assets/icons/refresh.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.check-texture-pack-updates-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Change Version";
+                        icon: @image-url("../../assets/icons/layers.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-texture-pack != "";
+                        align-left: true;
+                        clicked => { root.change-texture-pack-version-clicked(root.selected-texture-pack); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Add File";
+                        icon: @image-url("../../assets/icons/plus.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.import-texture-pack-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Remove";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        enabled: root.selected-texture-pack != "";
+                        align-left: true;
+                        clicked => { root.remove-texture-pack-clicked(root.selected-texture-pack); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "View Homepage";
+                        icon: @image-url("../../assets/icons/external-link.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-texture-pack != "";
+                        align-left: true;
+                        clicked => { root.view-texture-pack-homepage-clicked(root.selected-texture-pack); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Open Folder";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.open-texture-packs-folder-clicked(); }
+                    }
+                }
+
+                if root.active-page == 3: VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: 2px;
+                    alignment: start;
+
+                    CrabButton {
+                        text: "Download";
+                        icon: @image-url("../../assets/icons/download.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.download-shader-packs-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Check for Updates";
+                        icon: @image-url("../../assets/icons/refresh.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.check-shader-pack-updates-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Change Version";
+                        icon: @image-url("../../assets/icons/layers.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-shader-pack != "";
+                        align-left: true;
+                        clicked => { root.change-shader-pack-version-clicked(root.selected-shader-pack); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Add File";
+                        icon: @image-url("../../assets/icons/plus.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.import-shader-pack-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Remove";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        enabled: root.selected-shader-pack != "";
+                        align-left: true;
+                        clicked => { root.remove-shader-pack-clicked(root.selected-shader-pack); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "View Homepage";
+                        icon: @image-url("../../assets/icons/external-link.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-shader-pack != "";
+                        align-left: true;
+                        clicked => { root.view-shader-pack-homepage-clicked(root.selected-shader-pack); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Open Folder";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.open-shader-packs-folder-clicked(); }
+                    }
+                }
+
+                if root.active-page == 4: VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: 2px;
+                    alignment: start;
+
+                    CrabButton {
+                        text: "Add";
+                        icon: @image-url("../../assets/icons/plus.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: !root.is-running;
+                        align-left: true;
+                        clicked => { root.import-world-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "Rename";
+                        icon: @image-url("../../assets/icons/edit.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-world-folder != "" && !root.is-running;
+                        align-left: true;
+                        clicked => { root.request-rename-world-dialog(root.selected-world-folder); }
+                    }
+
+                    CrabButton {
+                        text: "Backup";
+                        icon: @image-url("../../assets/icons/copy.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-world-folder != "";
+                        align-left: true;
+                        clicked => { root.backup-world-clicked(root.selected-world-folder); }
+                    }
+
+                    CrabButton {
+                        text: "Delete";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        enabled: root.selected-world-folder != "" && !root.is-running;
+                        align-left: true;
+                        clicked => { root.request-delete-world-dialog(root.selected-world-folder); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Data Packs";
+                        icon: @image-url("../../assets/icons/layers.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-world-folder != "";
+                        align-left: true;
+                        clicked => { root.open-world-datapacks-clicked(root.selected-world-folder); }
+                    }
+
+                    CrabButton {
+                        text: "Reset Icon";
+                        icon: @image-url("../../assets/icons/x.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-world-folder != "";
+                        align-left: true;
+                        clicked => { root.reset-world-icon-clicked(root.selected-world-folder); }
+                    }
+
+                    CrabButton {
+                        text: "Copy Seed";
+                        icon: @image-url("../../assets/icons/copy.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-world-folder != "";
+                        align-left: true;
+                        clicked => { root.copy-world-seed-clicked(root.selected-world-folder); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Refresh";
+                        icon: @image-url("../../assets/icons/refresh.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.refresh-worlds-clicked(); }
+                    }
+
+                    CrabButton {
+                        text: "View Folder";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.open-world-folder-clicked(root.selected-world-folder); }
+                    }
+                }
+
+                if root.active-page == 5: VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: 2px;
+                    alignment: start;
+
+                    CrabButton {
+                        text: "Add";
+                        icon: @image-url("../../assets/icons/plus.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: !root.is-running;
+                        align-left: true;
+                        clicked => { root.request-server-dialog(false, -1, "", ""); }
+                    }
+
+                    CrabButton {
+                        text: "Rename";
+                        icon: @image-url("../../assets/icons/edit.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-server-index >= 0 && !root.is-running;
+                        align-left: true;
+                        clicked => {
+                            root.request-server-dialog(true, root.selected-server-index, root.server-name-input, root.server-ip-input);
+                        }
+                    }
+
+                    CrabButton {
+                        text: "Delete";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        enabled: root.selected-server-index >= 0 && !root.is-running;
+                        align-left: true;
+                        clicked => {
+                            root.request-delete-server-dialog(root.selected-server-index, root.server-name-input);
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Move Up";
+                        icon: @image-url("../../assets/icons/arrow-up.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-server-index > 0 && !root.is-running;
+                        align-left: true;
+                        clicked => { root.move-server-up-clicked(root.selected-server-index); }
+                    }
+
+                    CrabButton {
+                        text: "Move Down";
+                        icon: @image-url("../../assets/icons/arrow-down.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-server-index >= 0 && root.selected-server-index < root.servers.length - 1 && !root.is-running;
+                        align-left: true;
+                        clicked => { root.move-server-down-clicked(root.selected-server-index); }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    CrabButton {
+                        text: "Join";
+                        icon: @image-url("../../assets/icons/play.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-server-index >= 0 && root.server-ip-input != "" && !root.is-running;
+                        align-left: true;
+                        clicked => { root.join-server-clicked(root.server-ip-input); }
+                    }
+
+                    CrabButton {
+                        text: "Refresh";
+                        icon: @image-url("../../assets/icons/refresh.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.refresh-servers-clicked(); }
+                    }
+                }
+
+                if root.active-page == 6: VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: 2px;
+                    alignment: start;
+
+                    CrabButton {
+                        text: "Copy Image";
+                        icon: @image-url("../../assets/icons/copy.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-screenshot-file != "";
+                        align-left: true;
+                        clicked => { root.copy-screenshot-image-clicked(root.selected-screenshot-file); }
+                    }
+
+                    CrabButton {
+                        text: "Copy File(s)";
+                        icon: @image-url("../../assets/icons/copy.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-screenshot-file != "";
+                        align-left: true;
+                        clicked => { root.copy-screenshot-file-clicked(root.selected-screenshot-file); }
+                    }
+
+                    CrabButton {
+                        text: "Delete";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        enabled: root.selected-screenshot-file != "";
+                        align-left: true;
+                        clicked => { root.delete-screenshot-clicked(root.selected-screenshot-file); }
+                    }
+
+                    CrabButton {
+                        text: "Rename";
+                        icon: @image-url("../../assets/icons/edit.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        enabled: root.selected-screenshot-file != "";
+                        align-left: true;
+                        clicked => {
+                            root.rename-screenshot-input = root.selected-screenshot-file;
+                            root.show-rename-screenshot-dialog = true;
+                        }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+
+                    CrabButton {
+                        text: "Open Folder";
+                        icon: @image-url("../../assets/icons/folder.svg");
+                        has-icon: true;
+                        variant: "ghost";
+                        align-left: true;
+                        clicked => { root.open-screenshots-folder-clicked(); }
+                    }
+                }
+            }
+        }
+
+        // 4. Barra inferior global (Launch / Stop / Close)
+        Rectangle {
+            height: 44px;
+            background: Theme.bg-secondary;
+
+            Rectangle {
+                y: 0px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.error-message != "" ? root.error-message : root.status-message;
+                    font-size: Theme.font-xs;
+                    color: root.error-message != "" ? Theme.error-text : Theme.accent;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "OK";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    enabled: root.instance-name != "";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.cancel-clicked();
+                    }
+                }
+            }
+        }
+    }
+
+}

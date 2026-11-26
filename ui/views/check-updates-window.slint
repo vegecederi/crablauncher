@@ -1,0 +1,177 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+export struct UpdateCandidateItem {
+    id: string,
+    name: string,
+    installed-version: string,
+    available-version: string,
+    provider: string,
+    selected: bool,
+    icon: image,
+    has-icon: bool,
+}
+
+/// Janela independente de verificação e instalação de atualizações (Mods, Texture Packs, Shader Packs).
+export component CheckUpdatesWindow inherits Window {
+    title: "Check for Updates — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 600px;
+    preferred-height: 440px;
+    min-width: 500px;
+    min-height: 360px;
+    background: Theme.bg-secondary;
+
+    in property <string> heading-title: "Check for Updates";
+    in property <bool> is-checking: false;
+    in property <string> status-text: "";
+    in property <[UpdateCandidateItem]> updates: [];
+
+    callback toggle-item(string);
+    callback install-selected();
+    callback cancelled();
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: root.heading-title;
+        subtitle: root.is-checking
+            ? "Checking remote providers for compatible updates..."
+            : root.status-text;
+        escape-pressed => { root.cancelled(); }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-primary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            if root.is-checking: Text {
+                text: "Checking for updates...";
+                font-size: Theme.font-sm;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if !root.is-checking && root.updates.length == 0: Text {
+                text: root.status-text != "" ? root.status-text : "All tracked items are up to date.";
+                font-size: Theme.font-sm;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if !root.is-checking && root.updates.length > 0: ListView {
+                for item in root.updates: Rectangle {
+                    height: 50px;
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-md;
+                        padding-right: Theme.space-md;
+                        spacing: Theme.space-sm;
+
+                        VerticalLayout {
+                            width: 24px;
+                            alignment: center;
+                            CrabCheckbox {
+                                label: "";
+                                checked: item.selected;
+                                toggled => { root.toggle-item(item.id); }
+                            }
+                        }
+
+                        VerticalLayout {
+                            width: 32px;
+                            alignment: center;
+                            if item.has-icon: Image {
+                                source: item.icon;
+                                width: 28px;
+                                height: 28px;
+                                image-fit: cover;
+                            }
+                            if !item.has-icon: Image {
+                                source: item.provider == "Modrinth"
+                                    ? @image-url("../../assets/providers/modrinth.svg")
+                                    : item.provider == "CurseForge"
+                                        ? @image-url("../../assets/providers/curseforge.svg")
+                                        : @image-url("../../assets/icons/puzzle.svg");
+                                width: 24px;
+                                height: 24px;
+                                image-fit: contain;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+
+                            Text {
+                                text: item.name;
+                                font-size: Theme.font-sm;
+                                font-weight: 600;
+                                color: Theme.text-primary;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: item.installed-version + "  →  " + item.available-version;
+                                font-size: Theme.font-xs;
+                                color: Theme.accent;
+                                overflow: elide;
+                            }
+                        }
+
+                        Text {
+                            text: item.provider;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        width: parent.width;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Close";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancelled(); }
+            }
+
+            CrabButton {
+                text: "Install Selected";
+                icon: @image-url("../../assets/icons/download.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: !root.is-checking && root.updates.length > 0;
+                clicked => { root.install-selected(); }
+            }
+        }
+    }
+}

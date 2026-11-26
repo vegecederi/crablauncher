@@ -1,0 +1,116 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+
+/// Janela dedicada de confirmação para remoção de contas (Offline ou Microsoft).
+export component RemoveAccountWindow inherits Window {
+    title: "Remove Account — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 420px;
+    preferred-height: 224px;
+    min-width: 380px;
+    min-height: 210px;
+    background: Theme.bg-primary;
+
+    in-out property <string> account-id: "";
+    in-out property <string> account-username: "";
+    in-out property <string> account-type: "Offline";
+
+    callback confirm-remove(string); // account_id
+    callback cancel-clicked();
+
+    FocusScope {
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape) {
+                root.cancel-clicked();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: Theme.space-lg;
+            spacing: Theme.space-md;
+
+            Text {
+                text: "Remove Account";
+                font-size: Theme.font-lg;
+                font-weight: 600;
+                color: Theme.text-primary;
+            }
+
+            // Cartão resumo da conta (avatar + username + tipo)
+            Rectangle {
+                height: 54px;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                HorizontalLayout {
+                    padding-left: Theme.space-md;
+                    padding-right: Theme.space-md;
+                    spacing: Theme.space-md;
+
+                    VerticalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../../assets/icons/steve-head.svg");
+                            width: 30px;
+                            height: 30px;
+                            image-rendering: pixelated;
+                        }
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+
+                        Text {
+                            text: root.account-username;
+                            font-size: Theme.font-md;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.account-type + " Account";
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Are you sure you want to remove this account? Only the account and its local credentials will be removed from Crab Launcher. Your instances and Microsoft account will not be affected.";
+                font-size: Theme.font-sm;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+                vertical-stretch: 1;
+            }
+
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+                alignment: end;
+
+                CrabButton {
+                    text: "Cancel";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Remove Account";
+                    icon: @image-url("../../assets/icons/trash.svg");
+                    has-icon: true;
+                    variant: "danger";
+                    clicked => { root.confirm-remove(root.account-id); }
+                }
+            }
+        }
+    }
+}

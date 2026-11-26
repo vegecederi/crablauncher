@@ -1,0 +1,31 @@
+import { Theme } from "../theme.slint";
+
+/// Container de seção (fieldset) para agrupar configurações relacionadas.
+/// `max-width` amplo impede que elementos internos de largura fixa limitem o container,
+/// garantindo que ele preencha 100% da largura disponível em qualquer tamanho de janela.
+export component SettingsSection inherits Rectangle {
+    in property <string> title;
+
+    horizontal-stretch: 1;
+    min-width: 0px;
+    max-width: 99999px;
+    border-radius: Theme.radius-sm;
+    background: Theme.bg-secondary;
+    border-width: 1px;
+    border-color: Theme.border;
+
+    VerticalLayout {
+        width: parent.width;
+        padding: 12px;
+        spacing: 10px;
+
+        if root.title != "": Text {
+            text: root.title;
+            font-size: Theme.font-md;
+            font-weight: 600;
+            color: Theme.text-primary;
+        }
+
+        @children
+    }
+}

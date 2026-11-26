@@ -1,0 +1,33 @@
+schema_version = 1
+
+[metadata]
+id = "deep-dark"
+name = "Deep Dark"
+author = "Crab Team"
+version = "1.0.0"
+description = "Subterranean Ancient City palette with sculk teal highlights."
+base = "crab-dark"
+
+[colors]
+background = "#070f14"
+surface = "#10242b"
+surface_elevated = "#15333c"
+border = "#17434b"
+border_subtle = "#123038"
+accent = "#35b5ae"
+accent_hover = "#48c7c0"
+accent_pressed = "#299c96"
+accent_muted = "#35b5ae26"
+accent_foreground = "#070f14"
+text_primary = "#b8e5df"
+text_secondary = "#779f9f"
+text_disabled = "#446368"
+hover = "#1a3d47"
+pressed = "#0d1d24"
+danger = "#d14d58"
+success = "#47b881"
+warning = "#e0b354"
+console_bg = "#050b0f"
+
+[geometry]
+border_radius = 4

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Crab Launcher
+Comment=A fast, minimalist Minecraft launcher
+Exec=crab-launcher
+Icon=org.crablauncher.Crab
+Terminal=false
+Categories=Game;
+StartupWMClass=org.crablauncher.Crab

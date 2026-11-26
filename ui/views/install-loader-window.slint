@@ -1,0 +1,343 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { NavigationItem } from "../components/navigation-item.slint";
+
+export struct LoaderVersionItem {
+    index: int,
+    version: string,
+    release-type: string,
+    status: string,
+    recommended: bool,
+}
+
+/// Janela independente "Install Loader — {instance_name}" para Fabric, Forge e NeoForge.
+export component InstallLoaderWindow inherits Window {
+    title: "Install Loader — " + root.instance-name;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 760px;
+    preferred-height: 500px;
+    min-width: 640px;
+    min-height: 420px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-id: "";
+    in property <string> instance-name: "";
+    in property <string> minecraft-version: "";
+
+    // 0=Fabric, 1=Forge, 2=NeoForge
+    in-out property <int> selected-loader: 0;
+    in property <[LoaderVersionItem]> versions: [];
+    in-out property <int> selected-version-index: -1;
+    in-out property <string> search-query: "";
+    in-out property <bool> show-experimental: false;
+
+    in property <bool> is-loading: false;
+    in property <bool> is-installing: false;
+    in property <string> status-message: "";
+    in property <string> error-message: "";
+
+    callback loader-changed(int);
+    callback filters-changed();
+    callback refresh-clicked();
+    callback recommended-clicked();
+    callback install-clicked(int);
+    callback cancel-clicked();
+
+    VerticalLayout {
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // Painel esquerdo: Loaders disponíveis
+            Rectangle {
+                width: 164px;
+                background: Theme.bg-secondary;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: Theme.space-xs;
+
+                    Text {
+                        text: "Modloaders";
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                    }
+
+                    NavigationItem {
+                        label: "Fabric";
+                        icon: @image-url("../../assets/modloaders/fabric.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-loader == 0;
+                        clicked => {
+                            root.selected-loader = 0;
+                            root.loader-changed(0);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Forge";
+                        icon: @image-url("../../assets/modloaders/forge.jpg");
+                        preserve-icon-colors: true;
+                        selected: root.selected-loader == 1;
+                        clicked => {
+                            root.selected-loader = 1;
+                            root.loader-changed(1);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "NeoForge";
+                        icon: @image-url("../../assets/modloaders/neoforge.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-loader == 2;
+                        clicked => {
+                            root.selected-loader = 2;
+                            root.loader-changed(2);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "Quilt";
+                        icon: @image-url("../../assets/modloaders/quilt.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-loader == 3;
+                        clicked => {
+                            root.selected-loader = 3;
+                            root.loader-changed(3);
+                        }
+                    }
+
+                    NavigationItem {
+                        label: "LiteLoader";
+                        icon: @image-url("../../assets/modloaders/liteloader.png");
+                        preserve-icon-colors: true;
+                        selected: root.selected-loader == 4;
+                        clicked => {
+                            root.selected-loader = 4;
+                            root.loader-changed(4);
+                        }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // Painel central: versões compatíveis
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg-primary;
+
+                VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+
+                        CrabTextInput {
+                            horizontal-stretch: 1;
+                            text <=> root.search-query;
+                            placeholder: "Search loader versions for Minecraft " + root.minecraft-version + "...";
+                            leading-icon: @image-url("../../assets/icons/search.svg");
+                            has-leading-icon: true;
+                            edited => { root.filters-changed(); }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            CrabCheckbox {
+                                label: "Show Experimental";
+                                checked <=> root.show-experimental;
+                                toggled => { root.filters-changed(); }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            Rectangle {
+                                height: 26px;
+                                background: Theme.bg-interactive;
+
+                                HorizontalLayout {
+                                    padding-left: Theme.space-md;
+                                    padding-right: Theme.space-md;
+                                    spacing: Theme.space-sm;
+
+                                    Text { text: "Version"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 2; vertical-alignment: center; }
+                                    Text { text: "Release Type"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 100px; vertical-alignment: center; }
+                                    Text { text: "Status"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
+                                }
+                            }
+
+                            if root.is-loading: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: "Fetching compatible versions...";
+                                    font-size: Theme.font-md;
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if !root.is-loading && root.versions.length == 0: Rectangle {
+                                vertical-stretch: 1;
+                                Text {
+                                    text: root.error-message != ""
+                                        ? root.error-message
+                                        : "No compatible versions found for Minecraft " + root.minecraft-version + ".";
+                                    font-size: Theme.font-sm;
+                                    color: root.error-message != "" ? Theme.error-text : Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            if !root.is-loading && root.versions.length > 0: ListView {
+                                vertical-stretch: 1;
+
+                                for ver in root.versions: Rectangle {
+                                    height: 30px;
+                                    background: ver.index == root.selected-version-index
+                                        ? Theme.accent-muted
+                                        : v-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                    v-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.selected-version-index = ver.index; }
+                                    }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-md;
+                                        padding-right: Theme.space-md;
+                                        spacing: Theme.space-sm;
+
+                                        Text {
+                                            text: ver.version;
+                                            font-size: Theme.font-md;
+                                            font-weight: ver.index == root.selected-version-index ? 600 : 400;
+                                            color: ver.index == root.selected-version-index ? Theme.accent : Theme.text-primary;
+                                            horizontal-stretch: 2;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: ver.release-type;
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            width: 100px;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: ver.status;
+                                            font-size: Theme.font-xs;
+                                            font-weight: ver.recommended ? 600 : 400;
+                                            color: ver.recommended ? Theme.accent : Theme.text-secondary;
+                                            width: 110px;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Rodapé
+        Rectangle {
+            height: 46px;
+            background: Theme.bg-secondary;
+
+            Rectangle {
+                y: 0px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                CrabButton {
+                    text: "Refresh";
+                    icon: @image-url("../../assets/icons/refresh.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    enabled: !root.is-loading && !root.is-installing;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.refresh-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Recommended";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    enabled: !root.is-loading && !root.is-installing;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.recommended-clicked(); }
+                }
+
+                Text {
+                    text: root.status-message;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "Cancel";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                CrabButton {
+                    text: root.is-installing ? "Installing..." : "Install";
+                    icon: @image-url("../../assets/icons/download.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    enabled: root.selected-version-index >= 0 && !root.is-loading && !root.is-installing;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.install-clicked(root.selected-version-index); }
+                }
+            }
+        }
+    }
+}

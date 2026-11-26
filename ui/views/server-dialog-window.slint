@@ -1,0 +1,89 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela nativa para adicionar ou editar um servidor na aba Servers.
+export component ServerDialogWindow inherits Window {
+    title: "Add Server — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 390px;
+    preferred-height: 214px;
+    min-width: 350px;
+    min-height: 204px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> server-name: "";
+    in-out property <string> server-address: "";
+    in-out property <string> error-message: "";
+
+    callback confirmed(string, string); // (name, address)
+    callback cancelled();
+
+    public function focus-name() {
+        name-field.focus-and-select-all();
+    }
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Add Server";
+        subtitle: "Add a multiplayer server to servers.dat.";
+        escape-pressed => { root.cancelled(); }
+
+        name-field := CrabTextInput {
+            text <=> root.server-name;
+            placeholder: "Server Name";
+            accepted => {
+                if (root.server-name != "" && root.server-address != "") {
+                    root.confirmed(root.server-name, root.server-address);
+                }
+            }
+        }
+
+        CrabTextInput {
+            text <=> root.server-address;
+            placeholder: "Server Address (e.g. play.example.net)";
+            accepted => {
+                if (root.server-name != "" && root.server-address != "") {
+                    root.confirmed(root.server-name, root.server-address);
+                }
+            }
+        }
+
+        if root.error-message != "": Text {
+            text: root.error-message;
+            font-size: Theme.font-xs;
+            color: Theme.error-text;
+            overflow: elide;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancelled(); }
+            }
+
+            CrabButton {
+                text: "Add Server";
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.server-name != "" && root.server-address != "";
+                clicked => { root.confirmed(root.server-name, root.server-address); }
+            }
+        }
+    }
+}

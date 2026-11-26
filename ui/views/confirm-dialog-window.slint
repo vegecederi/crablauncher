@@ -1,0 +1,81 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela nativa reutilizável de confirmação (exclusões, parada do jogo, etc.).
+export component ConfirmDialogWindow inherits Window {
+    title: root.window-title;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 400px;
+    preferred-height: 176px;
+    min-width: 360px;
+    min-height: 164px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> window-title: "Confirm — Crab";
+    in-out property <string> heading: "Confirm Action";
+    in-out property <string> message: "";
+    in-out property <string> confirm-label: "Confirm";
+    in-out property <string> confirm-variant: "danger"; // "danger" | "primary"
+
+    callback confirmed();
+    callback cancelled();
+
+    FocusScope {
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            if (ev.text == Key.Return) {
+                root.confirmed();
+                return accept;
+            }
+            reject
+        }
+
+        CrabDialogFrame {
+            width: parent.width;
+            height: parent.height;
+            heading: root.heading;
+            escape-pressed => { root.cancelled(); }
+
+            Text {
+                text: root.message;
+                font-size: Theme.font-sm;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+                vertical-stretch: 1;
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.border-subtle;
+            }
+
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+                alignment: end;
+
+                CrabButton {
+                    text: "Cancel";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    clicked => { root.cancelled(); }
+                }
+
+                CrabButton {
+                    text: root.confirm-label;
+                    icon: root.confirm-variant == "danger"
+                        ? @image-url("../../assets/icons/trash.svg")
+                        : @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: root.confirm-variant;
+                    clicked => { root.confirmed(); }
+                }
+            }
+        }
+    }
+}

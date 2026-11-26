@@ -1,0 +1,103 @@
+import { Theme } from "../theme.slint";
+import { Strings } from "../strings.slint";
+import { CrabButton } from "../components/button.slint";
+
+export component InstallProgressBar inherits Rectangle {
+    in property <string> operation-text;
+    in property <float> progress: 0.0;
+    in property <bool> indeterminate: true;
+    in property <string> files-text;
+    in property <string> transfer-text;
+
+    callback cancel-clicked();
+
+    height: 46px;
+    background: Theme.bg-secondary;
+
+    Rectangle {
+        y: 0px;
+        height: 1px;
+        width: parent.width;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        padding-top: Theme.space-xs;
+        padding-bottom: Theme.space-xs;
+        spacing: Theme.space-md;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            alignment: center;
+
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.operation-text;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                if root.files-text != "": Text {
+                    text: root.files-text;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                }
+
+                if root.transfer-text != "": Text {
+                    text: root.transfer-text;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                }
+            }
+
+            Rectangle {
+                height: 5px;
+                border-radius: 2px;
+                background: Theme.bg-primary;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                clip: true;
+
+                if !root.indeterminate: Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    height: parent.height;
+                    width: parent.width * max(0.0, min(1.0, root.progress));
+                    border-radius: 2px;
+                    background: Theme.accent;
+                }
+
+                if root.indeterminate: Rectangle {
+                    x: parent.width * 0.25;
+                    y: 0px;
+                    height: parent.height;
+                    width: parent.width * 0.35;
+                    border-radius: 2px;
+                    background: Theme.accent;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            CrabButton {
+                text: Strings.cancel;
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => {
+                    root.cancel-clicked();
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,213 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+
+export struct LaunchSummaryRowItem {
+    label: string,
+    value: string,
+    source: string,
+}
+
+/// Janela compacta "View Launch Configuration" mostrando configurações efetivas e origem (Global vs Override).
+export component LaunchSummaryWindow inherits Window {
+    title: "Launch Configuration — " + root.instance-name;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 640px;
+    preferred-height: 490px;
+    min-width: 520px;
+    min-height: 380px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-name: "";
+    in property <[LaunchSummaryRowItem]> rows: [];
+    in property <string> warnings-text: "";
+    in property <string> copy-feedback: "";
+
+    callback copy-clicked();
+    callback close-clicked();
+
+    VerticalLayout {
+        // Cabeçalho
+        Rectangle {
+            height: 48px;
+            background: Theme.bg-secondary;
+
+            HorizontalLayout {
+                padding-left: Theme.space-lg;
+                padding-right: Theme.space-lg;
+                spacing: Theme.space-sm;
+
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: "Effective Launch Configuration";
+                        font-size: Theme.font-lg;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                    }
+                    Text {
+                        text: "Instance: " + root.instance-name + " (sensitive credentials are never shown)";
+                        font-size: Theme.font-xs;
+                        color: Theme.text-secondary;
+                    }
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+        }
+
+        // Tabela de configurações efetivas
+        VerticalLayout {
+            vertical-stretch: 1;
+            padding: Theme.space-md;
+            spacing: Theme.space-sm;
+
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+                clip: true;
+
+                VerticalLayout {
+                    Rectangle {
+                        height: 26px;
+                        background: Theme.bg-interactive;
+
+                        HorizontalLayout {
+                            padding-left: Theme.space-md;
+                            padding-right: Theme.space-md;
+                            spacing: Theme.space-sm;
+                            Text { text: "Setting"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 150px; vertical-alignment: center; }
+                            Text { text: "Effective Value"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: "Source"; font-size: Theme.font-xs; font-weight: 600; color: Theme.text-secondary; width: 116px; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                    }
+
+                    ListView {
+                        vertical-stretch: 1;
+
+                        for row in root.rows: Rectangle {
+                            min-height: 30px;
+                            background: transparent;
+
+                            HorizontalLayout {
+                                padding-left: Theme.space-md;
+                                padding-right: Theme.space-md;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: Theme.space-sm;
+
+                                Text {
+                                    text: row.label;
+                                    font-size: Theme.font-sm;
+                                    font-weight: 500;
+                                    color: Theme.text-secondary;
+                                    width: 150px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: row.value;
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-primary;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                    wrap: word-wrap;
+                                }
+
+                                Text {
+                                    text: row.source;
+                                    font-size: Theme.font-xs;
+                                    font-weight: row.source == "Instance Override" ? 600 : 400;
+                                    color: row.source == "Instance Override" ? Theme.accent : Theme.text-secondary;
+                                    width: 116px;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                y: parent.height - 1px;
+                                height: 1px;
+                                width: parent.width;
+                                background: Theme.border-subtle;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.warnings-text != "": Rectangle {
+                border-radius: Theme.radius-sm;
+                background: Theme.warning-bg;
+                border-width: 1px;
+                border-color: Theme.warning-border;
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    Text {
+                        text: root.warnings-text;
+                        font-size: Theme.font-xs;
+                        color: Theme.warning-text;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        // Rodapé
+        Rectangle {
+            height: 46px;
+            background: Theme.bg-secondary;
+
+            Rectangle {
+                y: 0px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-lg;
+                padding-right: Theme.space-lg;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.copy-feedback;
+                    font-size: Theme.font-xs;
+                    color: Theme.success;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                CrabButton {
+                    text: "Copy Launch Configuration";
+                    icon: @image-url("../../assets/icons/copy.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.copy-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Close";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.close-clicked(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,1832 @@
+import { Theme } from "theme.slint";
+import { Strings } from "strings.slint";
+import { CrabButton } from "components/button.slint";
+import { CrabToolbar } from "components/toolbar.slint";
+import { CrabTextInput } from "components/input.slint";
+import { ChevronIcon } from "components/chevron.slint";
+import { CrabContextMenu, ContextMenuHeader, ContextMenuDivider, ContextMenuItem, ContextMenuCheckItem } from "components/context-menu.slint";
+import { InstanceCard } from "components/instance-card.slint";
+import { InstanceSidebar } from "views/sidebar.slint";
+import { CopyInstanceWindow } from "views/copy-instance-dialog.slint";
+import { AddOfflineAccountWindow } from "views/add-offline-account-dialog.slint";
+import { ConfirmDialogWindow } from "views/confirm-dialog-window.slint";
+import { TextInputDialogWindow } from "views/text-input-dialog-window.slint";
+import { ServerDialogWindow } from "views/server-dialog-window.slint";
+import { ReviewModsWindow, ReviewItemEntry } from "views/review-mods-window.slint";
+import { CheckUpdatesWindow, UpdateCandidateItem } from "views/check-updates-window.slint";
+import { VerifyDependenciesWindow, DependencyIssueItem } from "views/verify-dependencies-window.slint";
+import { AddInstanceWindow, VersionItem, AddLoaderVersionItem } from "views/add-instance-window.slint";
+import { SettingsWindow, JavaRuntimeItem, ThemeItem, IconPackItem } from "views/settings-window.slint";
+import { AccountItem } from "views/accounts-window.slint";
+import { EditInstanceWindow, GroupOption, ComponentItem, LocalModItem, PackItem, WorldItem, ServerItem, ScreenshotItem, SessionLogItem, SessionLogLine } from "views/edit-instance-window.slint";
+import { ConsoleWindow, ConsoleLogLine } from "views/console-window.slint";
+import { MicrosoftAuthWindow } from "views/microsoft-auth-window.slint";
+import { InstallJavaWindow, JavaBuildItem } from "views/install-java-window.slint";
+import { InstallLoaderWindow, LoaderVersionItem } from "views/install-loader-window.slint";
+import { ChangeGroupWindow } from "views/change-group-window.slint";
+import { SelectJavaWindow } from "views/select-java-window.slint";
+import { LaunchSummaryWindow, LaunchSummaryRowItem } from "views/launch-summary-window.slint";
+import { ManageJvmPresetsWindow, JvmPresetListItem } from "views/manage-jvm-presets-window.slint";
+import { SelectIconWindow, SelectableIconItem } from "views/select-icon-window.slint";
+import { TaskProgressWindow, DownloadTaskRow } from "views/task-progress-window.slint";
+import { DownloadModsWindow, RemoteModListItem, ReviewModItem, DescriptionBlockItem, FilterOptionItem } from "views/download-mods-window.slint";
+import { RenameInstanceWindow } from "views/rename-instance-window.slint";
+import { RemoveAccountWindow } from "views/remove-account-window.slint";
+import { ChangeVersionWindow, ChangeVersionRow } from "views/change-version-window.slint";
+import { DropdownOption } from "components/dropdown.slint";
+
+export {
+    AddInstanceWindow,
+    VersionItem,
+    AddLoaderVersionItem,
+    TaskProgressWindow,
+    DownloadTaskRow,
+    DownloadModsWindow,
+    RemoteModListItem,
+    ReviewModItem,
+    DescriptionBlockItem,
+    FilterOptionItem,
+    RenameInstanceWindow,
+    RemoveAccountWindow,
+    ConfirmDialogWindow,
+    TextInputDialogWindow,
+    ServerDialogWindow,
+    AddOfflineAccountWindow,
+    CopyInstanceWindow,
+    ReviewModsWindow,
+    ReviewItemEntry,
+    CheckUpdatesWindow,
+    UpdateCandidateItem,
+    VerifyDependenciesWindow,
+    DependencyIssueItem,
+    ChangeVersionWindow,
+    ChangeVersionRow,
+    SettingsWindow,
+    JavaRuntimeItem,
+    ThemeItem,
+    IconPackItem,
+    AccountItem,
+    EditInstanceWindow,
+    GroupOption,
+    ComponentItem,
+    LocalModItem,
+    PackItem,
+    WorldItem,
+    ServerItem,
+    ScreenshotItem,
+    SessionLogItem,
+    SessionLogLine,
+    ConsoleWindow,
+    ConsoleLogLine,
+    MicrosoftAuthWindow,
+    InstallJavaWindow,
+    JavaBuildItem,
+    InstallLoaderWindow,
+    LoaderVersionItem,
+    ChangeGroupWindow,
+    SelectJavaWindow,
+    LaunchSummaryWindow,
+    LaunchSummaryRowItem,
+    ManageJvmPresetsWindow,
+    JvmPresetListItem,
+    SelectIconWindow,
+    SelectableIconItem,
+    DropdownOption,
+    Theme,
+    Strings,
+}
+
+export struct InstanceItem {
+    id: string,
+    name: string,
+    minecraft-version: string,
+    version-type: string,
+    modloader: string,
+    modloader-kind: string,
+    custom-icon: image,
+    has-custom-icon: bool,
+    playtime-text: string,
+    last-played-text: string,
+    group-id: string,
+    group-name: string,
+    install-status-code: string,
+    install-status-label: string,
+    install-error: string,
+    is-running: bool,
+}
+
+export struct GroupSectionItem {
+    id: string,
+    name: string,
+    collapsed: bool,
+    is-ungrouped: bool,
+    instances: [InstanceItem],
+}
+
+export component MainWindow inherits Window {
+    title: Strings.app-name;
+    icon: @image-url("../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    forward-focus: key-scope;
+    preferred-width: 1060px;
+    preferred-height: 660px;
+    min-width: 780px;
+    min-height: 480px;
+    background: Theme.bg-primary;
+
+    in property <[InstanceItem]> instances: [];
+    in property <[GroupSectionItem]> group-sections: [];
+    in property <bool> has-groups: false;
+    in-out property <string> instance-search-query: "";
+    in-out property <bool> temp-reveal-search: false;
+
+    // Preferências da toolbar e barra de status (persistidas em config.json)
+    in-out property <bool> hide-instance-search: false;
+    in-out property <bool> show-status-bar: true;
+    in-out property <bool> show-toolbar-labels: true;
+    in-out property <bool> compact-toolbar: false;
+
+    // Layout Customization Mode (posições encaixáveis tipadas, separadas dos temas)
+    in-out property <string> toolbar-position: "top";      // "top" | "bottom"
+    in-out property <string> sidebar-position: "right";    // "right" | "left"
+    in-out property <string> status-bar-position: "bottom"; // "bottom" | "top"
+    in-out property <bool> customize-layout-mode: false;
+    private property <string> prev-toolbar-position: "top";
+    private property <length> folders-btn-x: 122px;
+    private property <length> folders-btn-y: 0px;
+    private property <length> folders-btn-h: 32px;
+    private property <length> accounts-btn-x: 0px;
+    private property <length> accounts-btn-y: 0px;
+    private property <length> accounts-btn-w: 120px;
+    private property <length> accounts-btn-h: 32px;
+    private property <string> prev-sidebar-position: "right";
+    private property <string> prev-status-bar-position: "bottom";
+    in-out property <string> dragging-component: ""; // "" | "toolbar" | "sidebar" | "statusbar"
+    in-out property <string> drop-preview-zone: "";  // "" | "top" | "bottom" | "left" | "right"
+
+    // Preferências da grade de instâncias (Settings -> Appearance -> Instance Grid)
+    in property <length> grid-icon-px: 44px;
+    in property <length> grid-gap: 10px;
+    in property <bool> grid-show-name: true;
+    in property <bool> grid-show-version: false;
+    in property <bool> grid-show-modloader: false;
+
+    private property <length> active-toolbar-height: root.compact-toolbar ? 36px : Theme.toolbar-height;
+    private property <length> active-toolbar-btn-height: root.compact-toolbar ? 26px : Theme.toolbar-button-height;
+    private property <bool> search-visible: !root.hide-instance-search || root.temp-reveal-search;
+
+    in-out property <string> selected-instance-id: "";
+    in property <string> selected-instance-name: "";
+    in property <string> selected-instance-version: "";
+    in property <string> selected-instance-modloader: "";
+    in property <string> selected-instance-playtime: "";
+    in property <string> selected-instance-last-played: "";
+    in property <image> selected-instance-icon;
+    in property <bool> selected-instance-has-icon: false;
+    in property <string> selected-instance-type: "";
+    in property <string> selected-instance-group-name: "Ungrouped";
+    in property <string> selected-instance-status-code: "not_installed";
+    in property <string> selected-instance-status-label: "Not installed";
+    in property <string> selected-instance-error: "";
+    in property <bool> selected-instance-running: false;
+
+    // Seletor de contas na toolbar
+    in property <bool> has-active-account: false;
+    in property <string> active-account-name: "";
+    in property <[AccountItem]> accounts: [];
+
+    // Menus suspensos e menus de contexto (apenas um aberto por vez)
+    // Drag & Drop de instâncias entre grupos (independente do Customize Layout)
+    private property <bool> instance-dragging: false;
+    private property <string> dragging-instance-id: "";
+    private property <string> dragging-instance-name: "";
+    private property <length> drag-cursor-x: 0px;
+    private property <length> drag-cursor-y: 0px;
+    private property <string> drag-target-group-id: "";
+    private property <bool> drag-has-valid-target: false;
+
+    callback move-instance-to-group(string, string); // (instance_id, group_id)
+    callback open-rename-instance-clicked(string);
+    callback request-delete-instance-dialog(string, string);
+    callback request-copy-instance-dialog(string, string);
+    callback request-group-dialog(string, string, string);
+    callback request-delete-group-dialog(string, string);
+    callback request-add-offline-account-dialog();
+
+    in-out property <bool> show-folders-menu: false;
+    in-out property <bool> show-accounts-menu: false;
+    in-out property <bool> show-group-context-menu: false;
+    in-out property <string> group-context-id: "";
+    in-out property <string> group-context-name: "";
+    in-out property <bool> group-context-collapsed: false;
+    in-out property <length> group-context-x: 0px;
+    in-out property <length> group-context-y: 0px;
+    in-out property <bool> show-delete-group-dialog: false;
+
+    in-out property <bool> show-instance-context-menu: false;
+    in-out property <length> instance-context-x: 0px;
+    in-out property <length> instance-context-y: 0px;
+
+    in-out property <bool> show-empty-context-menu: false;
+    in-out property <length> empty-context-x: 0px;
+    in-out property <length> empty-context-y: 0px;
+
+    in-out property <bool> show-toolbar-context-menu: false;
+    in-out property <length> toolbar-context-x: 0px;
+    in-out property <length> toolbar-context-y: 0px;
+
+    // Diálogo de confirmação ao encerrar o Minecraft
+    in-out property <bool> show-stop-confirm-dialog: false;
+    in-out property <string> stop-confirm-instance-id: "";
+    in-out property <string> stop-confirm-instance-name: "";
+
+    // Diálogo Copy Instance
+    in-out property <bool> show-copy-dialog: false;
+    in-out property <string> copy-new-name: "";
+    in-out property <bool> copy-saves: true;
+    in-out property <bool> copy-config: true;
+    in-out property <bool> copy-resourcepacks: true;
+    in-out property <bool> copy-screenshots: false;
+    in property <string> copy-error: "";
+
+    // Estado da barra de progresso de instalação
+    in property <bool> install-active: false;
+    in property <string> install-operation-text: "";
+    in property <float> install-progress: 0.0;
+    in property <bool> install-indeterminate: true;
+    in property <string> install-files-text: "";
+    in property <string> install-transfer-text: "";
+
+    in property <string> status-text: "Ready";
+    in property <string> app-version: "v0.1.0";
+
+    // Diálogos modais
+    in-out property <bool> show-group-dialog: false;
+    in-out property <string> group-dialog-title: "Create Group";
+    in-out property <string> group-dialog-target-id: "";
+    in-out property <string> group-dialog-input: "";
+    in property <string> group-dialog-error: "";
+    in-out property <bool> show-delete-dialog: false;
+    in-out property <bool> show-offline-account-dialog: false;
+    in-out property <string> offline-username-input: "";
+    in property <string> offline-account-error: "";
+
+    callback add-instance-clicked();
+    callback instance-search-changed(string);
+    callback toolbar-prefs-changed(bool, bool, bool, bool); // hide_search, show_status_bar, show_labels, compact
+    callback layout-saved(string, string, string);          // toolbar_pos, sidebar_pos, status_bar_pos
+    callback settings-clicked();
+    callback accounts-clicked();
+    callback open-system-folder(string); // "launcher" | "instances" | "libraries" | "assets" | "runtimes" | "logs"
+    callback select-account(string);
+    callback select-account-by-index(int);
+    callback create-offline-account(string);
+    callback select-instance(string);
+    callback launch-instance-clicked(string);
+    callback stop-instance-clicked(string);
+    callback confirm-stop-instance(string);
+    callback open-console-clicked(string);
+    callback view-launch-config-clicked(string);
+    callback install-instance-clicked(string);
+    callback repair-instance-clicked(string);
+    callback edit-instance-clicked(string);
+    callback change-icon-clicked(string);
+    callback change-group-clicked(string);
+    callback cancel-install-clicked();
+    callback open-folder-clicked(string);
+    callback copy-instance-confirmed(string, string, bool, bool, bool, bool);
+    callback delete-confirmed(string);
+
+    // Ações de grupos
+    callback group-dialog-confirmed(string, string);
+    callback toggle-group-collapsed(string);
+    callback move-group-up(string);
+    callback move-group-down(string);
+    callback delete-group-clicked(string);
+
+    // Atalhos globais da janela principal (desativados quando diálogos com campos de texto estão abertos)
+    key-scope := FocusScope {
+        enabled: !root.show-group-dialog && !root.show-delete-dialog && !root.show-offline-account-dialog && !root.show-copy-dialog && !root.show-stop-confirm-dialog;
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape) {
+                if (root.dragging-component != "") {
+                    root.dragging-component = "";
+                    root.drop-preview-zone = "";
+                    return accept;
+                }
+                if (root.customize-layout-mode) {
+                    root.toolbar-position = root.prev-toolbar-position;
+                    root.sidebar-position = root.prev-sidebar-position;
+                    root.status-bar-position = root.prev-status-bar-position;
+                    root.customize-layout-mode = false;
+                    return accept;
+                }
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-instance-context-menu = false;
+                root.show-empty-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                if (root.instance-search-query != "") {
+                    root.instance-search-query = "";
+                    root.instance-search-changed("");
+                }
+                if (root.temp-reveal-search) {
+                    root.temp-reveal-search = false;
+                }
+                return accept;
+            }
+            if (ev.modifiers.control && (ev.text == "f" || ev.text == "F")) {
+                if (root.hide-instance-search) {
+                    root.temp-reveal-search = true;
+                }
+                return accept;
+            }
+            if (ev.modifiers.control) {
+                if (ev.text == "1") { root.select-account-by-index(0); return accept; }
+                if (ev.text == "2") { root.select-account-by-index(1); return accept; }
+                if (ev.text == "3") { root.select-account-by-index(2); return accept; }
+                if (ev.text == "4") { root.select-account-by-index(3); return accept; }
+                if (ev.text == "5") { root.select-account-by-index(4); return accept; }
+                if (ev.text == "6") { root.select-account-by-index(5); return accept; }
+                if (ev.text == "7") { root.select-account-by-index(6); return accept; }
+                if (ev.text == "8") { root.select-account-by-index(7); return accept; }
+                if (ev.text == "9") { root.select-account-by-index(8); return accept; }
+                if (ev.text == "0") { root.select-account-by-index(9); return accept; }
+            }
+            if (root.selected-instance-id != "") {
+                if (ev.text == Key.Return && !root.selected-instance-running && root.selected-instance-status-code != "installing") {
+                    root.launch-instance-clicked(root.selected-instance-id);
+                    return accept;
+                }
+                if (ev.text == Key.Delete && !root.selected-instance-running) {
+                    root.request-delete-instance-dialog(root.selected-instance-id, root.selected-instance-name);
+                    return accept;
+                }
+                if (ev.text == Key.F2) {
+                    root.open-rename-instance-clicked(root.selected-instance-id);
+                    return accept;
+                }
+                if (ev.modifiers.control) {
+                    if (ev.text == "k" || ev.text == "K") {
+                        if (root.selected-instance-running) {
+                            root.stop-instance-clicked(root.selected-instance-id);
+                        }
+                        return accept;
+                    }
+                    if (ev.text == "i" || ev.text == "I") {
+                        root.edit-instance-clicked(root.selected-instance-id);
+                        return accept;
+                    }
+                    if (ev.text == "g" || ev.text == "G") {
+                        root.change-group-clicked(root.selected-instance-id);
+                        return accept;
+                    }
+                    if (ev.text == "d" || ev.text == "D") {
+                        root.request-copy-instance-dialog(root.selected-instance-id, root.selected-instance-name);
+                        return accept;
+                    }
+                }
+            }
+            reject
+        }
+    }
+
+    // Wallpaper do tema especial Vice (preserva proporção com cover + scrim sutil para legibilidade)
+    if Theme.is-vice-theme: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        clip: true;
+
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: @image-url("../assets/themes/vice/wallpaper.png");
+            image-fit: cover;
+        }
+
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #19152266;
+        }
+    }
+
+    VerticalLayout {
+        // Barra de controle do modo Customize Layout (Done / Cancel / Reset Layout)
+        if root.customize-layout-mode: Rectangle {
+            height: 38px;
+            background: Theme.accent-muted;
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.accent;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: "Customize Layout — Drag handles on Toolbar, Sidebar, or Status Bar to reposition (Esc to cancel)";
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "Reset Layout";
+                    icon: @image-url("../assets/icons/refresh.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.toolbar-position = "top";
+                        root.sidebar-position = "right";
+                        root.status-bar-position = "bottom";
+                    }
+                }
+
+                CrabButton {
+                    text: "Cancel";
+                    variant: "secondary";
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.dragging-component = "";
+                        root.drop-preview-zone = "";
+                        root.toolbar-position = root.prev-toolbar-position;
+                        root.sidebar-position = root.prev-sidebar-position;
+                        root.status-bar-position = root.prev-status-bar-position;
+                        root.customize-layout-mode = false;
+                    }
+                }
+
+                CrabButton {
+                    text: "Done";
+                    icon: @image-url("../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.dragging-component = "";
+                        root.drop-preview-zone = "";
+                        root.customize-layout-mode = false;
+                        root.layout-saved(
+                            root.toolbar-position,
+                            root.sidebar-position,
+                            root.status-bar-position
+                        );
+                    }
+                }
+            }
+        }
+
+        // Barra de status encaixada no topo (quando status-bar-position == "top")
+        if root.show-status-bar && root.status-bar-position == "top": Rectangle {
+            height: Theme.statusbar-height;
+            background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
+            clip: true;
+
+            if Theme.is-vice-theme: Image {
+                x: 0px;
+                y: 0px;
+                width: root.width;
+                height: root.height;
+                source: @image-url("../assets/themes/vice/wallpaper-blurred.png");
+                image-fit: cover;
+            }
+            if Theme.is-vice-theme: Rectangle {
+                width: parent.width;
+                height: parent.height;
+                background: #30253894;
+            }
+            border-width: root.customize-layout-mode ? 1px : 0px;
+            border-color: Theme.accent;
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-md;
+
+                if root.customize-layout-mode: Rectangle {
+                    width: 68px;
+                    height: 18px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 3px;
+                    background: Theme.accent;
+
+                    TouchArea {
+                        mouse-cursor: grab;
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                root.dragging-component = "statusbar";
+                                root.drop-preview-zone = "top";
+                            } else if (ev.kind == PointerEventKind.up && root.dragging-component == "statusbar") {
+                                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
+                                    root.status-bar-position = root.drop-preview-zone;
+                                }
+                                root.dragging-component = "";
+                                root.drop-preview-zone = "";
+                            }
+                        }
+                        moved => {
+                            if (root.dragging-component == "statusbar") {
+                                root.drop-preview-zone = (self.absolute-position.y + self.mouse-y) < (root.height / 2) ? "top" : "bottom";
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Drag Bar";
+                        font-size: 10px;
+                        font-weight: 600;
+                        color: Theme.text-on-accent;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: root.instances.length == 1 ? "1 instance" : root.instances.length + " instances";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-text;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.selected-instance-id != "" && root.selected-instance-playtime != "": Text {
+                    text: "Played: " + root.selected-instance-playtime
+                        + (root.selected-instance-last-played != "" ? "  |  Last played: " + root.selected-instance-last-played : "")
+                        + "  |";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.app-version;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-disabled;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+        }
+
+        // Toolbar unificada na parte superior (mesmo componente CrabToolbar usado na parte inferior)
+        if root.toolbar-position == "top": CrabToolbar {
+            toolbar-position: "top";
+            show-toolbar-labels: root.show-toolbar-labels;
+            compact-toolbar: root.compact-toolbar;
+            search-visible: root.search-visible;
+            instance-search-query <=> root.instance-search-query;
+            has-active-account: root.has-active-account;
+            active-account-name: root.active-account-name;
+            customize-layout-mode: root.customize-layout-mode;
+            temp-reveal-search: root.temp-reveal-search;
+            blur-offset-y: root.show-status-bar && root.status-bar-position == "top" ? Theme.statusbar-height : 0px;
+            window-width: root.width;
+            window-height: root.height;
+
+            add-instance-clicked => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.add-instance-clicked();
+            }
+            folders-toggled(bx, by, bw, bh) => {
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.folders-btn-x = bx;
+                root.folders-btn-y = by;
+                root.folders-btn-h = bh;
+                root.show-folders-menu = !root.show-folders-menu;
+            }
+            create-group-clicked => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.request-group-dialog("Create Group", "", "");
+            }
+            settings-clicked => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.settings-clicked();
+            }
+            accounts-toggled(bx, by, bw, bh) => {
+                root.show-folders-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.accounts-btn-x = bx;
+                root.accounts-btn-y = by;
+                root.accounts-btn-w = bw;
+                root.accounts-btn-h = bh;
+                root.show-accounts-menu = !root.show-accounts-menu;
+            }
+            search-changed(q) => { root.instance-search-changed(q); }
+            clear-search-clicked => {
+                root.instance-search-query = "";
+                root.instance-search-changed("");
+                if (root.temp-reveal-search) { root.temp-reveal-search = false; }
+            }
+            toolbar-right-clicked(mx, my) => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.toolbar-context-x = max(8px, min(root.width - 216px, mx));
+                root.toolbar-context-y = max(4px, min(root.height - 190px, my));
+                root.show-toolbar-context-menu = true;
+            }
+            drag-started => {
+                root.dragging-component = "toolbar";
+                root.drop-preview-zone = root.toolbar-position;
+            }
+            drag-moved(gy) => {
+                root.drop-preview-zone = gy > root.height / 2 ? "bottom" : "top";
+            }
+            drag-ended => {
+                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
+                    root.toolbar-position = root.drop-preview-zone;
+                }
+                root.dragging-component = "";
+                root.drop-preview-zone = "";
+            }
+        }
+
+        // Conteúdo principal: painel lateral (esquerda ou direita) + grade central automática
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // Painel lateral encaixado à esquerda (quando sidebar-position == "left")
+            if root.sidebar-position == "left": VerticalLayout {
+                width: Theme.sidebar-width;
+
+                if root.customize-layout-mode: Rectangle {
+                    height: 26px;
+                    background: Theme.accent;
+
+                    TouchArea {
+                        mouse-cursor: grab;
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                root.dragging-component = "sidebar";
+                                root.drop-preview-zone = "left";
+                            } else if (ev.kind == PointerEventKind.up && root.dragging-component == "sidebar") {
+                                if (root.drop-preview-zone == "left" || root.drop-preview-zone == "right") {
+                                    root.sidebar-position = root.drop-preview-zone;
+                                }
+                                root.dragging-component = "";
+                                root.drop-preview-zone = "";
+                            }
+                        }
+                        moved => {
+                            if (root.dragging-component == "sidebar") {
+                                root.drop-preview-zone = (self.absolute-position.x + self.mouse-x) < (root.width / 2) ? "left" : "right";
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Drag Panel";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: Theme.text-on-accent;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                InstanceSidebar {
+                    vertical-stretch: 1;
+                    has-selection: root.selected-instance-id != "";
+                    instance-name: root.selected-instance-name;
+                    minecraft-version: root.selected-instance-version;
+                    modloader-display: root.selected-instance-modloader;
+                    playtime-display: root.selected-instance-playtime;
+                    last-played-display: root.selected-instance-last-played;
+                    custom-icon: root.selected-instance-icon;
+                    has-custom-icon: root.selected-instance-has-icon;
+                    group-name: root.selected-instance-group-name;
+                    install-status-code: root.selected-instance-status-code;
+                    install-status-label: root.selected-instance-status-label;
+                    install-error: root.selected-instance-error;
+                    is-running: root.selected-instance-running;
+                    window-width: root.width;
+                    window-height: root.height;
+                    blur-offset-x: root.sidebar-position == "right" ? (root.width - Theme.sidebar-width) : 0px;
+                    blur-offset-y: (root.toolbar-position == "top" ? root.active-toolbar-height : 0px)
+                        + (root.show-status-bar && root.status-bar-position == "top" ? Theme.statusbar-height : 0px);
+
+                    launch-clicked => { if (!root.customize-layout-mode) { root.launch-instance-clicked(root.selected-instance-id); } }
+                    stop-clicked => { if (!root.customize-layout-mode) { root.stop-instance-clicked(root.selected-instance-id); } }
+                    console-clicked => { if (!root.customize-layout-mode) { root.open-console-clicked(root.selected-instance-id); } }
+                    install-clicked => { if (!root.customize-layout-mode) { root.install-instance-clicked(root.selected-instance-id); } }
+                    repair-clicked => { if (!root.customize-layout-mode) { root.repair-instance-clicked(root.selected-instance-id); } }
+                    edit-clicked => { if (!root.customize-layout-mode) { root.edit-instance-clicked(root.selected-instance-id); } }
+                    change-icon-clicked => { if (!root.customize-layout-mode) { root.change-icon-clicked(root.selected-instance-id); } }
+                    change-group-clicked => { if (!root.customize-layout-mode) { root.change-group-clicked(root.selected-instance-id); } }
+                    open-folder-clicked => { if (!root.customize-layout-mode) { root.open-folder-clicked(root.selected-instance-id); } }
+                    delete-clicked => { if (!root.customize-layout-mode) { root.request-delete-instance-dialog(root.selected-instance-id, root.selected-instance-name); } }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.is-vice-theme ? transparent : Theme.bg-primary;
+                clip: true;
+
+                // Clique direito em área vazia da grade abre exclusivamente "Create Instance"
+                empty-area-touch := TouchArea {
+                    pointer-event(ev) => {
+                        if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                            root.show-folders-menu = false;
+                            root.show-accounts-menu = false;
+                            root.show-group-context-menu = false;
+                            root.show-instance-context-menu = false;
+                            root.empty-context-x = max(8px, min(root.width - 180px, self.absolute-position.x + self.mouse-x));
+                            root.empty-context-y = max(Theme.toolbar-height + 4px, min(root.height - 50px, self.absolute-position.y + self.mouse-y));
+                            root.show-empty-context-menu = true;
+                        }
+                    }
+                }
+
+                // Estado vazio minimalista
+                if root.instances.length == 0 && !root.has-groups: VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.space-md;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../assets/icons/cube.svg");
+                            width: 44px;
+                            height: 44px;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 4px;
+
+                        Text {
+                            text: Strings.empty-title;
+                            font-size: Theme.font-md;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: Strings.empty-subtitle;
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        CrabButton {
+                            text: Strings.add-instance;
+                            icon: @image-url("../assets/icons/plus.svg");
+                            has-icon: true;
+                            variant: "primary";
+                            clicked => {
+                                root.add-instance-clicked();
+                            }
+                        }
+                    }
+                }
+
+                // Grade compacta quando não há grupos
+                if root.instances.length > 0 && !root.has-groups: grid-flick := Flickable {
+                    width: parent.width;
+                    height: parent.height;
+
+                    property <length> card-w: 104px;
+                    property <length> card-h: root.grid-icon-px + 54px;
+                    property <length> gap: root.grid-gap;
+                    property <length> pad: 10px;
+                    property <int> columns: max(1, floor((self.width - 2 * self.pad + self.gap) / (self.card-w + self.gap)));
+                    property <int> rows: ceil(root.instances.length / self.columns);
+
+                    content-width: self.width;
+                    content-height: max(self.height, self.pad * 2 + self.rows * (self.card-h + self.gap));
+
+                    for inst[idx] in root.instances: InstanceCard {
+                        x: grid-flick.pad + mod(idx, grid-flick.columns) * (grid-flick.card-w + grid-flick.gap);
+                        y: grid-flick.pad + floor(idx / grid-flick.columns) * (grid-flick.card-h + grid-flick.gap);
+                        name: inst.name;
+                        version: inst.minecraft-version;
+                        modloader: inst.modloader;
+                        modloader-kind: inst.modloader-kind;
+                        custom-icon: inst.custom-icon;
+                        has-custom-icon: inst.has-custom-icon;
+                        install-status: inst.install-status-code;
+                        is-running: inst.is-running;
+                        selected: inst.id == root.selected-instance-id;
+                        icon-px: root.grid-icon-px;
+                        show-name: root.grid-show-name;
+                        show-version: root.grid-show-version;
+                        show-modloader: root.grid-show-modloader;
+                        clicked => {
+                            key-scope.focus();
+                            root.select-instance(inst.id);
+                        }
+                        double-clicked => {
+                            if (!inst.is-running && inst.install-status-code != "installing") {
+                                root.launch-instance-clicked(inst.id);
+                            }
+                        }
+                        right-clicked(mx, my) => {
+                            key-scope.focus();
+                            root.select-instance(inst.id);
+                            root.show-folders-menu = false;
+                            root.show-accounts-menu = false;
+                            root.show-group-context-menu = false;
+                            root.show-empty-context-menu = false;
+                            root.instance-context-x = max(8px, min(root.width - 236px, mx));
+                            root.instance-context-y = max(root.active-toolbar-height + 4px, min(root.height - 380px, my));
+                            root.show-instance-context-menu = true;
+                        }
+                    }
+                }
+
+                // Seções compactas por grupo
+                if root.has-groups: groups-flick := Flickable {
+                    width: parent.width;
+                    height: parent.height;
+
+                    property <length> card-w: 104px;
+                    property <length> card-h: root.grid-icon-px + 54px;
+                    property <length> gap: root.grid-gap;
+                    property <int> columns: max(1, floor((self.width - 20px + self.gap) / (self.card-w + self.gap)));
+
+                    content-width: self.width;
+                    content-height: groups-col.preferred-height + 16px;
+
+                    groups-col := VerticalLayout {
+                        width: parent.width;
+                        padding: Theme.space-md;
+                        spacing: Theme.space-sm;
+                        alignment: start;
+
+                        for section in root.group-sections: Rectangle {
+                            private property <bool> is-drop-target: root.instance-dragging
+                                && root.drag-cursor-x >= self.absolute-position.x
+                                && root.drag-cursor-x <= self.absolute-position.x + self.width
+                                && root.drag-cursor-y >= self.absolute-position.y
+                                && root.drag-cursor-y <= self.absolute-position.y + self.height;
+                            changed is-drop-target => {
+                                if (self.is-drop-target) {
+                                    root.drag-target-group-id = section.id;
+                                    root.drag-has-valid-target = true;
+                                }
+                            }
+                            border-radius: Theme.radius-sm;
+                            border-width: self.is-drop-target ? 1px : 0px;
+                            border-color: Theme.accent;
+                            background: self.is-drop-target ? Theme.accent-muted : transparent;
+
+                            VerticalLayout {
+                                spacing: 4px;
+
+                            // Cabeçalho limpo do grupo (nunca exibido para instâncias sem grupo)
+                            if !section.is-ungrouped: Rectangle {
+                                height: 26px;
+                                border-radius: Theme.radius-sm;
+                                background: grp-hdr-touch.has-hover ? Theme.bg-secondary : transparent;
+
+                                grp-hdr-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        if (!section.is-ungrouped) {
+                                            root.toggle-group-collapsed(section.id);
+                                        }
+                                    }
+                                    pointer-event(ev) => {
+                                        if (!section.is-ungrouped
+                                            && ev.kind == PointerEventKind.down
+                                            && ev.button == PointerEventButton.right) {
+                                            root.show-folders-menu = false;
+                                            root.show-accounts-menu = false;
+                                            root.group-context-id = section.id;
+                                            root.group-context-name = section.name;
+                                            root.group-context-collapsed = section.collapsed;
+                                            root.group-context-x = max(8px, min(root.width - 196px, self.absolute-position.x + self.mouse-x));
+                                            root.group-context-y = max(root.active-toolbar-height + 4px, min(root.height - 170px, self.absolute-position.y + self.mouse-y));
+                                            root.show-group-context-menu = true;
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 4px;
+                                    padding-right: 4px;
+                                    spacing: 6px;
+
+                                    ChevronIcon {
+                                        direction: section.collapsed ? "right" : "down";
+                                        icon-size: 13px;
+                                        icon-color: Theme.text-secondary;
+                                    }
+
+                                    Text {
+                                        text: section.name;
+                                        font-family: Theme.display-font-family;
+                                        font-size: Theme.is-vice-theme ? 16px : Theme.font-md;
+                                        font-weight: 500;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        height: 1px;
+                                        y: 13px;
+                                        background: Theme.border;
+                                    }
+                                }
+                            }
+
+                            if !section.collapsed && section.instances.length == 0: Text {
+                                text: "Empty group";
+                                font-size: Theme.font-xs;
+                                color: Theme.text-disabled;
+                            }
+
+                            if !section.collapsed && section.instances.length > 0: Rectangle {
+                                height: ceil(section.instances.length / groups-flick.columns) * (groups-flick.card-h + groups-flick.gap);
+
+                                for inst[idx] in section.instances: InstanceCard {
+                                    x: mod(idx, groups-flick.columns) * (groups-flick.card-w + groups-flick.gap);
+                                    y: floor(idx / groups-flick.columns) * (groups-flick.card-h + groups-flick.gap);
+                                    name: inst.name;
+                                    version: inst.minecraft-version;
+                                    modloader: inst.modloader;
+                                    modloader-kind: inst.modloader-kind;
+                                    custom-icon: inst.custom-icon;
+                                    has-custom-icon: inst.has-custom-icon;
+                                    install-status: inst.install-status-code;
+                                    is-running: inst.is-running;
+                                    selected: inst.id == root.selected-instance-id;
+                                    icon-px: root.grid-icon-px;
+                                    show-name: root.grid-show-name;
+                                    show-version: root.grid-show-version;
+                                    show-modloader: root.grid-show-modloader;
+                                    clicked => {
+                                        key-scope.focus();
+                                        root.select-instance(inst.id);
+                                    }
+                                    double-clicked => {
+                                        if (!inst.is-running && inst.install-status-code != "installing") {
+                                            root.launch-instance-clicked(inst.id);
+                                        }
+                                    }
+                                    right-clicked(mx, my) => {
+                                        key-scope.focus();
+                                        root.select-instance(inst.id);
+                                        root.show-folders-menu = false;
+                                        root.show-accounts-menu = false;
+                                        root.show-group-context-menu = false;
+                                        root.show-empty-context-menu = false;
+                                        root.instance-context-x = max(8px, min(root.width - 236px, mx));
+                                        root.instance-context-y = max(root.active-toolbar-height + 4px, min(root.height - 380px, my));
+                                        root.show-instance-context-menu = true;
+                                    }
+                                    drag-started(dname, ax, ay) => {
+                                        root.instance-dragging = true;
+                                        root.dragging-instance-id = inst.id;
+                                        root.dragging-instance-name = dname;
+                                        root.drag-cursor-x = ax;
+                                        root.drag-cursor-y = ay;
+                                        root.drag-has-valid-target = false;
+                                    }
+                                    drag-moved(ax, ay) => {
+                                        root.drag-cursor-x = ax;
+                                        root.drag-cursor-y = ay;
+                                    }
+                                    drag-ended(ax, ay) => {
+                                        root.drag-cursor-x = ax;
+                                        root.drag-cursor-y = ay;
+                                        if (root.instance-dragging && root.drag-has-valid-target && root.dragging-instance-id != "") {
+                                            root.move-instance-to-group(root.dragging-instance-id, root.drag-target-group-id);
+                                        }
+                                        root.instance-dragging = false;
+                                        root.drag-has-valid-target = false;
+                                    }
+                                }
+                            }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Painel lateral encaixado à direita (padrão)
+            if root.sidebar-position == "right": VerticalLayout {
+                width: Theme.sidebar-width;
+
+                if root.customize-layout-mode: Rectangle {
+                    height: 26px;
+                    background: Theme.accent;
+
+                    TouchArea {
+                        mouse-cursor: grab;
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                root.dragging-component = "sidebar";
+                                root.drop-preview-zone = "right";
+                            } else if (ev.kind == PointerEventKind.up && root.dragging-component == "sidebar") {
+                                if (root.drop-preview-zone == "left" || root.drop-preview-zone == "right") {
+                                    root.sidebar-position = root.drop-preview-zone;
+                                }
+                                root.dragging-component = "";
+                                root.drop-preview-zone = "";
+                            }
+                        }
+                        moved => {
+                            if (root.dragging-component == "sidebar") {
+                                root.drop-preview-zone = (self.absolute-position.x + self.mouse-x) < (root.width / 2) ? "left" : "right";
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Drag Panel";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: Theme.text-on-accent;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                InstanceSidebar {
+                    vertical-stretch: 1;
+                    has-selection: root.selected-instance-id != "";
+                    instance-name: root.selected-instance-name;
+                    minecraft-version: root.selected-instance-version;
+                    modloader-display: root.selected-instance-modloader;
+                    playtime-display: root.selected-instance-playtime;
+                    last-played-display: root.selected-instance-last-played;
+                    custom-icon: root.selected-instance-icon;
+                    has-custom-icon: root.selected-instance-has-icon;
+                    group-name: root.selected-instance-group-name;
+                    install-status-code: root.selected-instance-status-code;
+                    install-status-label: root.selected-instance-status-label;
+                    install-error: root.selected-instance-error;
+                    is-running: root.selected-instance-running;
+                    window-width: root.width;
+                    window-height: root.height;
+                    blur-offset-x: root.sidebar-position == "right" ? (root.width - Theme.sidebar-width) : 0px;
+                    blur-offset-y: (root.toolbar-position == "top" ? root.active-toolbar-height : 0px)
+                        + (root.show-status-bar && root.status-bar-position == "top" ? Theme.statusbar-height : 0px);
+
+                    launch-clicked => { if (!root.customize-layout-mode) { root.launch-instance-clicked(root.selected-instance-id); } }
+                    stop-clicked => { if (!root.customize-layout-mode) { root.stop-instance-clicked(root.selected-instance-id); } }
+                    console-clicked => { if (!root.customize-layout-mode) { root.open-console-clicked(root.selected-instance-id); } }
+                    install-clicked => { if (!root.customize-layout-mode) { root.install-instance-clicked(root.selected-instance-id); } }
+                    repair-clicked => { if (!root.customize-layout-mode) { root.repair-instance-clicked(root.selected-instance-id); } }
+                    edit-clicked => { if (!root.customize-layout-mode) { root.edit-instance-clicked(root.selected-instance-id); } }
+                    change-icon-clicked => { if (!root.customize-layout-mode) { root.change-icon-clicked(root.selected-instance-id); } }
+                    change-group-clicked => { if (!root.customize-layout-mode) { root.change-group-clicked(root.selected-instance-id); } }
+                    open-folder-clicked => { if (!root.customize-layout-mode) { root.open-folder-clicked(root.selected-instance-id); } }
+                    delete-clicked => { if (!root.customize-layout-mode) { root.request-delete-instance-dialog(root.selected-instance-id, root.selected-instance-name); } }
+                }
+            }
+        }
+
+        // Toolbar unificada na parte inferior (mesmo componente CrabToolbar usado na parte superior)
+        if root.toolbar-position == "bottom": CrabToolbar {
+            toolbar-position: "bottom";
+            show-toolbar-labels: root.show-toolbar-labels;
+            compact-toolbar: root.compact-toolbar;
+            search-visible: root.search-visible;
+            instance-search-query <=> root.instance-search-query;
+            has-active-account: root.has-active-account;
+            active-account-name: root.active-account-name;
+            customize-layout-mode: root.customize-layout-mode;
+            temp-reveal-search: root.temp-reveal-search;
+            blur-offset-y: root.height - root.active-toolbar-height
+                - (root.show-status-bar && root.status-bar-position == "bottom" ? Theme.statusbar-height : 0px);
+            window-width: root.width;
+            window-height: root.height;
+
+            add-instance-clicked => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.add-instance-clicked();
+            }
+            folders-toggled(bx, by, bw, bh) => {
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.folders-btn-x = bx;
+                root.folders-btn-y = by;
+                root.folders-btn-h = bh;
+                root.show-folders-menu = !root.show-folders-menu;
+            }
+            create-group-clicked => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.request-group-dialog("Create Group", "", "");
+            }
+            settings-clicked => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.settings-clicked();
+            }
+            accounts-toggled(bx, by, bw, bh) => {
+                root.show-folders-menu = false;
+                root.show-group-context-menu = false;
+                root.show-toolbar-context-menu = false;
+                root.accounts-btn-x = bx;
+                root.accounts-btn-y = by;
+                root.accounts-btn-w = bw;
+                root.accounts-btn-h = bh;
+                root.show-accounts-menu = !root.show-accounts-menu;
+            }
+            search-changed(q) => { root.instance-search-changed(q); }
+            clear-search-clicked => {
+                root.instance-search-query = "";
+                root.instance-search-changed("");
+                if (root.temp-reveal-search) { root.temp-reveal-search = false; }
+            }
+            toolbar-right-clicked(mx, my) => {
+                root.show-folders-menu = false;
+                root.show-accounts-menu = false;
+                root.toolbar-context-x = max(8px, min(root.width - 216px, mx));
+                root.toolbar-context-y = max(4px, min(root.height - 190px, my));
+                root.show-toolbar-context-menu = true;
+            }
+            drag-started => {
+                root.dragging-component = "toolbar";
+                root.drop-preview-zone = root.toolbar-position;
+            }
+            drag-moved(gy) => {
+                root.drop-preview-zone = gy > root.height / 2 ? "bottom" : "top";
+            }
+            drag-ended => {
+                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
+                    root.toolbar-position = root.drop-preview-zone;
+                }
+                root.dragging-component = "";
+                root.drop-preview-zone = "";
+            }
+        }
+
+        // Barra de status encaixada na parte inferior (padrão)
+        if root.show-status-bar && root.status-bar-position == "bottom": Rectangle {
+            height: Theme.statusbar-height;
+            background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
+            clip: true;
+
+            if Theme.is-vice-theme: Image {
+                x: 0px;
+                y: -(root.height - Theme.statusbar-height);
+                width: root.width;
+                height: root.height;
+                source: @image-url("../assets/themes/vice/wallpaper-blurred.png");
+                image-fit: cover;
+            }
+            if Theme.is-vice-theme: Rectangle {
+                width: parent.width;
+                height: parent.height;
+                background: #30253894;
+            }
+            border-width: root.customize-layout-mode ? 1px : 0px;
+            border-color: Theme.accent;
+
+            Rectangle {
+                y: 0px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-md;
+
+                if root.customize-layout-mode: Rectangle {
+                    width: 68px;
+                    height: 18px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 3px;
+                    background: Theme.accent;
+
+                    TouchArea {
+                        mouse-cursor: grab;
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                root.dragging-component = "statusbar";
+                                root.drop-preview-zone = "bottom";
+                            } else if (ev.kind == PointerEventKind.up && root.dragging-component == "statusbar") {
+                                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
+                                    root.status-bar-position = root.drop-preview-zone;
+                                }
+                                root.dragging-component = "";
+                                root.drop-preview-zone = "";
+                            }
+                        }
+                        moved => {
+                            if (root.dragging-component == "statusbar") {
+                                root.drop-preview-zone = (self.absolute-position.y + self.mouse-y) < (root.height / 2) ? "top" : "bottom";
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Drag Bar";
+                        font-size: 10px;
+                        font-weight: 600;
+                        color: Theme.text-on-accent;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: root.instances.length == 1
+                        ? "1 instance"
+                        : root.instances.length + " instances";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 1px;
+                    height: 11px;
+                    y: (parent.height - self.height) / 2;
+                    background: Theme.border;
+                }
+
+                Text {
+                    text: root.status-text;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if root.selected-instance-id != "" && root.selected-instance-playtime != "": Text {
+                    text: "Played: " + root.selected-instance-playtime
+                        + (root.selected-instance-last-played != "" ? "  |  Last played: " + root.selected-instance-last-played : "")
+                        + "  |";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.app-version;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-disabled;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    // Menu suspenso Folders
+    if root.show-folders-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-folders-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: max(4px, min(parent.width - self.width - 4px, root.folders-btn-x));
+            y: root.toolbar-position == "bottom"
+                ? max(4px, root.folders-btn-y - self.height - 4px)
+                : (root.folders-btn-y + root.folders-btn-h + 4px);
+            menu-width: 196px;
+
+            for item in [
+                { key: "launcher", label: "Launcher Folder" },
+                { key: "instances", label: "Instances Folder" },
+                { key: "libraries", label: "Libraries Folder" },
+                { key: "assets", label: "Assets Folder" },
+                { key: "runtimes", label: "Java Runtimes Folder" },
+                { key: "icons", label: "Icons Folder" },
+                { key: "themes", label: "Themes Folder" },
+                { key: "logs", label: "Logs Folder" },
+            ]: ContextMenuItem {
+                text: item.label;
+                icon: @image-url("../assets/icons/folder.svg");
+                clicked => {
+                    root.show-folders-menu = false;
+                    root.open-system-folder(item.key);
+                }
+            }
+        }
+    }
+
+    // Menu suspenso Account Selector
+    if root.show-accounts-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-accounts-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: max(4px, min(parent.width - self.width - 4px, root.accounts-btn-x + root.accounts-btn-w - self.width));
+            y: root.toolbar-position == "bottom"
+                ? max(4px, root.accounts-btn-y - self.height - 4px)
+                : (root.accounts-btn-y + root.accounts-btn-h + 4px);
+            menu-width: 244px;
+
+            for acc[idx] in root.accounts: Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: acc.is-default
+                    ? Theme.accent-muted
+                    : am-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                am-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.show-accounts-menu = false;
+                        root.select-account(acc.id);
+                    }
+                }
+
+                HorizontalLayout {
+                    padding-left: Theme.space-sm;
+                    padding-right: Theme.space-sm;
+                    spacing: 6px;
+
+                    VerticalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../assets/icons/steve-head.svg");
+                            width: 16px;
+                            height: 16px;
+                            image-rendering: pixelated;
+                        }
+                    }
+
+                    Text {
+                        text: acc.username;
+                        font-size: Theme.font-sm;
+                        font-weight: acc.is-default ? 600 : 400;
+                        color: acc.is-default ? Theme.accent : Theme.text-primary;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    if idx < 10: Text {
+                        text: idx < 9 ? "Ctrl+" + (idx + 1) : "Ctrl+0";
+                        font-size: Theme.font-xs;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+
+                    if acc.is-default: VerticalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../assets/icons/check.svg");
+                            width: 14px;
+                            height: 14px;
+                            colorize: Theme.accent;
+                        }
+                    }
+                }
+            }
+
+            if root.accounts.length > 0: ContextMenuDivider { }
+
+            ContextMenuItem {
+                text: "Manage Accounts";
+                icon: @image-url("../assets/icons/settings.svg");
+                clicked => {
+                    root.show-accounts-menu = false;
+                    root.accounts-clicked();
+                }
+            }
+        }
+    }
+
+    // Menu de contexto de grupo (clique direito no cabeçalho do grupo)
+    if root.show-group-context-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-group-context-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: root.group-context-x;
+            y: root.group-context-y;
+            menu-width: 192px;
+
+            ContextMenuItem {
+                text: "Rename Group";
+                icon: @image-url("../assets/icons/edit.svg");
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.group-dialog-title = "Rename Group";
+                    root.group-dialog-target-id = root.group-context-id;
+                    root.group-dialog-input = root.group-context-name;
+                    root.show-group-dialog = true;
+                }
+            }
+
+            ContextMenuItem {
+                text: root.group-context-collapsed ? "Expand Group" : "Collapse Group";
+                icon: root.group-context-collapsed
+                    ? @image-url("../assets/icons/chevron-down.svg")
+                    : @image-url("../assets/icons/chevron-up.svg");
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.toggle-group-collapsed(root.group-context-id);
+                }
+            }
+
+            ContextMenuDivider { }
+
+            ContextMenuItem {
+                text: "Move Group Up";
+                icon: @image-url("../assets/icons/arrow-up.svg");
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.move-group-up(root.group-context-id);
+                }
+            }
+
+            ContextMenuItem {
+                text: "Move Group Down";
+                icon: @image-url("../assets/icons/arrow-down.svg");
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.move-group-down(root.group-context-id);
+                }
+            }
+
+            ContextMenuDivider { }
+
+            ContextMenuItem {
+                text: "Delete Group";
+                icon: @image-url("../assets/icons/trash.svg");
+                danger: true;
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.request-delete-group-dialog(root.group-context-id, root.group-context-name);
+                }
+            }
+        }
+    }
+
+    // Menu de contexto da instância (clique direito sobre qualquer InstanceCard)
+    if root.show-instance-context-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-instance-context-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: root.instance-context-x;
+            y: root.instance-context-y;
+            menu-width: 236px;
+
+            ContextMenuHeader { text: root.selected-instance-name; }
+                ContextMenuDivider { }
+
+                ContextMenuItem {
+                    text: "Rename";
+                    shortcut: "F2";
+                    icon: @image-url("../assets/icons/edit.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.open-rename-instance-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuItem {
+                    text: "Change Icon";
+                    icon: @image-url("../assets/icons/cube.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.change-icon-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuDivider { }
+
+                ContextMenuItem {
+                    text: "Launch";
+                    shortcut: "Enter";
+                    icon: @image-url("../assets/icons/play.svg");
+                    enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.launch-instance-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuItem {
+                    text: "Stop Game";
+                    shortcut: "Ctrl+K";
+                    icon: @image-url("../assets/icons/square.svg");
+                    enabled: root.selected-instance-running;
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.stop-instance-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuDivider { }
+
+                ContextMenuItem {
+                    text: "Edit Instance";
+                    shortcut: "Ctrl+I";
+                    icon: @image-url("../assets/icons/settings.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.edit-instance-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuItem {
+                    text: "View Launch Configuration";
+                    icon: @image-url("../assets/icons/info.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.view-launch-config-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuItem {
+                    text: "Change Group";
+                    shortcut: "Ctrl+G";
+                    icon: @image-url("../assets/icons/folder-plus.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.change-group-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuItem {
+                    text: "Open Folder";
+                    icon: @image-url("../assets/icons/folder.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.open-folder-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuDivider { }
+
+                ContextMenuItem {
+                    text: "Copy Instance";
+                    shortcut: "Ctrl+D";
+                    icon: @image-url("../assets/icons/copy.svg");
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.copy-new-name = root.selected-instance-name + " Copy";
+                        root.show-copy-dialog = true;
+                    }
+                }
+                ContextMenuItem {
+                    text: "Repair Instance";
+                    icon: @image-url("../assets/icons/wrench.svg");
+                    enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.repair-instance-clicked(root.selected-instance-id);
+                    }
+                }
+                ContextMenuItem {
+                    text: "Delete Instance";
+                    shortcut: "Del";
+                    icon: @image-url("../assets/icons/trash.svg");
+                    danger: true;
+                    enabled: !root.selected-instance-running;
+                    clicked => {
+                        root.show-instance-context-menu = false;
+                        root.request-delete-instance-dialog(root.selected-instance-id, root.selected-instance-name);
+                    }
+                }
+        }
+    }
+
+    // Menu de contexto de área vazia (exclusivamente "Create Instance")
+    if root.show-empty-context-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-empty-context-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: root.empty-context-x;
+            y: root.empty-context-y;
+            menu-width: 184px;
+
+            Rectangle {
+                height: 22px;
+                HorizontalLayout {
+                    padding-left: Theme.space-sm;
+                    padding-right: Theme.space-sm;
+                    Text {
+                        text: "Crab";
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            ContextMenuDivider { }
+
+            ContextMenuItem {
+                text: "Create Instance";
+                icon: @image-url("../assets/icons/plus.svg");
+                clicked => {
+                    root.show-empty-context-menu = false;
+                    root.add-instance-clicked();
+                }
+            }
+
+            ContextMenuItem {
+                text: "Create Group";
+                icon: @image-url("../assets/icons/folder-plus.svg");
+                clicked => {
+                    root.show-empty-context-menu = false;
+                    root.request-group-dialog("Create Group", "", "");
+                }
+            }
+        }
+    }
+
+    // Menu de contexto da toolbar (clique direito sobre a toolbar principal)
+    if root.show-toolbar-context-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-toolbar-context-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: root.toolbar-context-x;
+            y: root.toolbar-context-y;
+            menu-width: 218px;
+
+            ContextMenuItem {
+                text: "Customize Layout";
+                    icon: @image-url("../assets/icons/layout-grid.svg");
+                    clicked => {
+                        root.show-toolbar-context-menu = false;
+                        root.prev-toolbar-position = root.toolbar-position;
+                        root.prev-sidebar-position = root.sidebar-position;
+                        root.prev-status-bar-position = root.status-bar-position;
+                        root.customize-layout-mode = true;
+                        key-scope.focus();
+                    }
+                }
+
+                ContextMenuDivider { }
+
+                ContextMenuCheckItem {
+                    text: "Hide Instance Search";
+                    checked: root.hide-instance-search;
+                    toggled => {
+                        root.hide-instance-search = !root.hide-instance-search;
+                        root.temp-reveal-search = false;
+                        if (root.hide-instance-search && root.instance-search-query != "") {
+                            root.instance-search-query = "";
+                            root.instance-search-changed("");
+                        }
+                        root.show-toolbar-context-menu = false;
+                        root.toolbar-prefs-changed(
+                            root.hide-instance-search,
+                            root.show-status-bar,
+                            root.show-toolbar-labels,
+                            root.compact-toolbar
+                        );
+                    }
+                }
+
+                ContextMenuCheckItem {
+                    text: "Status Bar";
+                    checked: root.show-status-bar;
+                    toggled => {
+                        root.show-status-bar = !root.show-status-bar;
+                        root.show-toolbar-context-menu = false;
+                        root.toolbar-prefs-changed(
+                            root.hide-instance-search,
+                            root.show-status-bar,
+                            root.show-toolbar-labels,
+                            root.compact-toolbar
+                        );
+                    }
+                }
+
+                ContextMenuDivider { }
+
+                ContextMenuCheckItem {
+                    text: "Compact Toolbar";
+                    checked: root.compact-toolbar;
+                    toggled => {
+                        root.compact-toolbar = !root.compact-toolbar;
+                        root.show-toolbar-context-menu = false;
+                        root.toolbar-prefs-changed(
+                            root.hide-instance-search,
+                            root.show-status-bar,
+                            root.show-toolbar-labels,
+                            root.compact-toolbar
+                        );
+                    }
+                }
+
+                ContextMenuDivider { }
+
+                ContextMenuItem {
+                    text: "Reset Layout";
+                    icon: @image-url("../assets/icons/refresh.svg");
+                    clicked => {
+                        root.hide-instance-search = false;
+                        root.temp-reveal-search = false;
+                        root.show-status-bar = true;
+                        root.show-toolbar-labels = true;
+                        root.compact-toolbar = false;
+                        root.toolbar-position = "top";
+                        root.sidebar-position = "right";
+                        root.status-bar-position = "bottom";
+                        root.show-toolbar-context-menu = false;
+                        root.toolbar-prefs-changed(false, true, true, false);
+                        root.layout-saved("top", "right", "bottom");
+                    }
+                }
+        }
+    }
+
+    // Prévia visual das zonas de encaixe (docking) durante arraste no modo Customize Layout
+    if root.customize-layout-mode && root.dragging-component != "" && root.drop-preview-zone != "": Rectangle {
+        x: root.drop-preview-zone == "right" ? root.width - Theme.sidebar-width - 8px : 8px;
+        y: root.drop-preview-zone == "bottom" ? root.height - 52px : 44px;
+        width: (root.drop-preview-zone == "left" || root.drop-preview-zone == "right")
+            ? Theme.sidebar-width
+            : root.width - 16px;
+        height: (root.drop-preview-zone == "left" || root.drop-preview-zone == "right")
+            ? root.height - 96px
+            : 44px;
+        border-radius: Theme.radius-sm;
+        background: Theme.accent-muted;
+        border-width: 2px;
+        border-color: Theme.accent;
+
+        Text {
+            text: "Drop " + root.dragging-component + " here (" + root.drop-preview-zone + ")";
+            font-size: Theme.font-sm;
+            font-weight: 600;
+            color: Theme.accent;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+}

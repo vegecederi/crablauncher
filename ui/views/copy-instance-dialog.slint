@@ -1,0 +1,108 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela nativa dedicada para duplicar instâncias com seleção opcional de subpastas.
+export component CopyInstanceWindow inherits Window {
+    title: "Copy Instance — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 400px;
+    preferred-height: 292px;
+    min-width: 360px;
+    min-height: 276px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> source-instance-id: "";
+    in-out property <string> new-name: "";
+    in-out property <bool> copy-saves: true;
+    in-out property <bool> copy-config: true;
+    in-out property <bool> copy-resourcepacks: true;
+    in-out property <bool> copy-screenshots: false;
+    in-out property <string> error-message: "";
+
+    callback confirm-clicked(string, string, bool, bool, bool, bool);
+    callback cancel-clicked();
+
+    public function focus-name() {
+        name-field.focus-and-select-all();
+    }
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Copy Instance";
+        subtitle: "Duplicate this instance with selected folders.";
+        escape-pressed => { root.cancel-clicked(); }
+
+        name-field := CrabTextInput {
+            text <=> root.new-name;
+            placeholder: "New instance name...";
+            accepted => {
+                if (root.new-name != "") {
+                    root.confirm-clicked(
+                        root.source-instance-id,
+                        root.new-name,
+                        root.copy-saves,
+                        root.copy-config,
+                        root.copy-resourcepacks,
+                        root.copy-screenshots
+                    );
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            CrabCheckbox { label: "Copy Worlds (saves)"; checked <=> root.copy-saves; }
+            CrabCheckbox { label: "Copy Configuration (config)"; checked <=> root.copy-config; }
+            CrabCheckbox { label: "Copy Resource Packs"; checked <=> root.copy-resourcepacks; }
+            CrabCheckbox { label: "Copy Screenshots"; checked <=> root.copy-screenshots; }
+        }
+
+        if root.error-message != "": Text {
+            text: root.error-message;
+            font-size: Theme.font-xs;
+            color: Theme.error-text;
+            overflow: elide;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Copy";
+                icon: @image-url("../../assets/icons/copy.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.new-name != "";
+                clicked => {
+                    root.confirm-clicked(
+                        root.source-instance-id,
+                        root.new-name,
+                        root.copy-saves,
+                        root.copy-config,
+                        root.copy-resourcepacks,
+                        root.copy-screenshots
+                    );
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,235 @@
+import { Theme } from "../theme.slint";
+import { ChevronIcon } from "chevron.slint";
+
+export struct DropdownOption {
+    id: string,
+    label: string,
+    detail: string,
+    enabled: bool,
+    icon: image,
+    has-icon: bool,
+}
+
+/// Dropdown reutilizável e temático do Crab renderizado via `PopupWindow`.
+/// Mantém altura constante no fluxo do layout pai (zero layout shifting) e dimensionamento
+/// intrínseco do popup pelo número real de opções.
+export component CrabDropdown inherits Rectangle {
+    in property <[DropdownOption]> options: [];
+    in-out property <string> selected-id: "";
+    in property <string> selected-label: "Select...";
+    in property <image> selected-icon;
+    in property <bool> has-selected-icon: false;
+    in property <bool> enabled: true;
+    in property <bool> open-upward: false;
+
+    callback selected(string);
+
+    private property <int> highlighted-index: 0;
+    private property <length> content-height: root.options.length * 30px + 8px;
+    private property <length> popup-height: min(218px, max(38px, root.content-height));
+
+    height: Theme.button-height;
+    vertical-stretch: 0;
+    background: transparent;
+
+    // Botão principal do dropdown (altura fixa, nunca altera o layout ao redor)
+    header := Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        background: !root.enabled
+            ? Theme.bg-secondary
+            : h-touch.pressed
+                ? Theme.bg-interactive-pressed
+                : h-touch.has-hover
+                    ? Theme.bg-interactive-hover
+                    : Theme.bg-primary;
+        border-color: !root.enabled
+            ? Theme.border-subtle
+            : trigger-focus.has-focus
+                ? Theme.accent
+                : Theme.border;
+
+        trigger-focus := FocusScope {
+            enabled: root.enabled;
+            key-pressed(ev) => {
+                if (ev.text == Key.Return || ev.text == " " || ev.text == Key.DownArrow) {
+                    popup.show();
+                    return accept;
+                }
+                reject
+            }
+        }
+
+        h-touch := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            clicked => {
+                popup.show();
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: Theme.space-sm;
+            padding-right: Theme.space-sm;
+            spacing: Theme.space-sm;
+
+            if root.has-selected-icon: VerticalLayout {
+                alignment: center;
+                Image {
+                    source: root.selected-icon;
+                    width: 16px;
+                    height: 16px;
+                    image-fit: contain;
+                }
+            }
+
+            Text {
+                text: root.selected-label;
+                font-size: Theme.font-sm;
+                font-weight: 500;
+                color: root.enabled ? Theme.text-primary : Theme.text-disabled;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            ChevronIcon {
+                direction: "down";
+                icon-size: 14px;
+                icon-color: root.enabled ? Theme.text-secondary : Theme.text-disabled;
+            }
+        }
+    }
+
+    // Popup sobreposto fora do fluxo de layout pai, com altura intrínseca ao conteúdo
+    popup := PopupWindow {
+        x: 0px;
+        y: root.open-upward ? -(root.popup-height + 2px) : root.height + 2px;
+        width: root.width;
+        height: root.popup-height;
+        close-policy: close-on-click-outside;
+        forward-focus: popup-focus;
+
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-secondary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            popup-focus := FocusScope {
+                key-pressed(ev) => {
+                    if (ev.text == Key.Escape) {
+                        popup.close();
+                        trigger-focus.focus();
+                        return accept;
+                    }
+                    if (ev.text == Key.DownArrow && root.options.length > 0) {
+                        root.highlighted-index = min(root.options.length - 1, root.highlighted-index + 1);
+                        return accept;
+                    }
+                    if (ev.text == Key.UpArrow && root.options.length > 0) {
+                        root.highlighted-index = max(0, root.highlighted-index - 1);
+                        return accept;
+                    }
+                    if (ev.text == Key.Home && root.options.length > 0) {
+                        root.highlighted-index = 0;
+                        return accept;
+                    }
+                    if (ev.text == Key.End && root.options.length > 0) {
+                        root.highlighted-index = root.options.length - 1;
+                        return accept;
+                    }
+                    if (ev.text == Key.Return && root.highlighted-index >= 0 && root.highlighted-index < root.options.length) {
+                        if (root.options[root.highlighted-index].enabled) {
+                            root.selected-id = root.options[root.highlighted-index].id;
+                            root.selected(root.options[root.highlighted-index].id);
+                            popup.close();
+                            trigger-focus.focus();
+                        }
+                        return accept;
+                    }
+                    reject
+                }
+            }
+
+            Flickable {
+                width: parent.width;
+                height: parent.height;
+                content-width: parent.width;
+                content-height: root.content-height;
+
+                VerticalLayout {
+                    width: parent.width;
+                    padding: 4px;
+                    spacing: 0px;
+
+                    for opt[idx] in root.options: Rectangle {
+                        height: 30px;
+                        vertical-stretch: 0;
+                        border-radius: Theme.radius-sm;
+                        background: !opt.enabled
+                            ? transparent
+                            : opt.id == root.selected-id
+                                ? Theme.accent-muted
+                                : (opt-touch.has-hover || idx == root.highlighted-index)
+                                    ? Theme.bg-interactive-hover
+                                    : transparent;
+
+                        HorizontalLayout {
+                            padding-left: Theme.space-sm;
+                            padding-right: Theme.space-sm;
+                            spacing: Theme.space-sm;
+
+                            if opt.has-icon: VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: opt.icon;
+                                    width: 16px;
+                                    height: 16px;
+                                    image-fit: contain;
+                                }
+                            }
+
+                            Text {
+                                text: opt.label;
+                                font-size: Theme.font-sm;
+                                font-weight: opt.id == root.selected-id ? 600 : 400;
+                                color: !opt.enabled
+                                    ? Theme.text-disabled
+                                    : opt.id == root.selected-id
+                                        ? Theme.accent
+                                        : Theme.text-primary;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+
+                            if opt.detail != "": Text {
+                                text: opt.detail;
+                                font-size: Theme.font-xs;
+                                color: !opt.enabled ? Theme.text-disabled : Theme.text-secondary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        opt-touch := TouchArea {
+                            enabled: opt.enabled;
+                            mouse-cursor: opt.enabled ? pointer : default;
+                            clicked => {
+                                root.selected-id = opt.id;
+                                root.selected(opt.id);
+                                popup.close();
+                                trigger-focus.focus();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

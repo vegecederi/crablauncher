@@ -1,0 +1,121 @@
+import { Theme } from "../theme.slint";
+import { ChevronIcon } from "chevron.slint";
+
+export component CrabButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> show-chevron: false;
+    in property <string> variant: "secondary"; // "primary" | "secondary" | "danger" | "ghost" | "flat-danger"
+    in property <bool> enabled: true;
+    in property <bool> full-width: false;
+    in property <bool> align-left: false;
+    in property <length> icon-size: 16px;
+    out property <bool> hovered: touch.has-hover;
+
+    callback clicked();
+    callback right-clicked(length, length);
+
+    height: Theme.button-height;
+    border-radius: Theme.radius-sm;
+    border-width: (root.is-ghost || root.is-flat-danger) ? 0px : 1px;
+
+    private property <bool> is-primary: root.variant == "primary";
+    private property <bool> is-danger: root.variant == "danger";
+    private property <bool> is-ghost: root.variant == "ghost";
+    private property <bool> is-flat-danger: root.variant == "flat-danger";
+
+    background: !root.enabled
+        ? ((root.is-ghost || root.is-flat-danger) ? transparent : Theme.bg-secondary)
+        : touch.pressed
+            ? (root.is-primary ? Theme.accent-pressed
+                : root.is-danger ? Theme.danger-pressed
+                : root.is-flat-danger ? Theme.danger-muted
+                : Theme.bg-interactive-pressed)
+            : touch.has-hover
+                ? (root.is-primary ? Theme.accent-hover
+                    : root.is-danger ? Theme.danger-hover
+                    : root.is-flat-danger ? Theme.danger-muted
+                    : Theme.bg-interactive-hover)
+                : (root.is-primary ? Theme.accent
+                    : root.is-danger ? Theme.danger
+                    : (root.is-ghost || root.is-flat-danger) ? transparent
+                    : Theme.bg-interactive);
+
+    border-color: !root.enabled
+        ? ((root.is-ghost || root.is-flat-danger) ? transparent : Theme.border-subtle)
+        : focus-scope.has-focus
+            ? Theme.accent
+            : (root.is-primary ? Theme.accent
+                : root.is-danger ? Theme.danger
+                : (root.is-ghost || root.is-flat-danger) ? transparent
+                : Theme.border);
+
+    focus-scope := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                root.right-clicked(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        spacing: 8px;
+        alignment: root.align-left ? start : center;
+
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: root.icon;
+                width: root.icon-size;
+                height: root.icon-size;
+                colorize: !root.enabled
+                    ? Theme.text-disabled
+                    : root.is-primary
+                        ? Theme.text-on-accent
+                        : root.is-flat-danger
+                            ? (touch.has-hover ? Theme.error-text : Theme.icon-secondary)
+                            : Theme.icon-primary;
+            }
+        }
+
+        if root.text != "": Text {
+            text: root.text;
+            font-size: Theme.font-md;
+            font-weight: root.is-primary ? 600 : 500;
+            color: !root.enabled
+                ? Theme.text-disabled
+                : root.is-primary
+                    ? Theme.text-on-accent
+                    : root.is-flat-danger
+                        ? (touch.has-hover ? Theme.error-text : Theme.text-secondary)
+                        : Theme.text-primary;
+            vertical-alignment: center;
+        }
+
+        if root.show-chevron: ChevronIcon {
+            direction: "down";
+            icon-size: 13px;
+            icon-color: !root.enabled ? Theme.text-disabled : Theme.text-secondary;
+        }
+    }
+}

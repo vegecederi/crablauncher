@@ -1,0 +1,234 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+
+export struct AccountItem {
+    id: string,
+    username: string,
+    kind: string, // "Offline" | "Microsoft"
+    status: string,
+    is-default: bool,
+}
+
+export component AccountsWindow inherits Window {
+    title: "Accounts — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 540px;
+    preferred-height: 400px;
+    min-width: 460px;
+    min-height: 340px;
+    background: Theme.bg-primary;
+
+    in property <[AccountItem]> accounts: [];
+    in-out property <string> selected-account-id: "";
+    in property <bool> auth-in-progress: false;
+    in property <string> error-message: "";
+    in property <string> keyring-warning: "";
+
+    callback add-offline-clicked();
+    callback add-account-clicked();
+    callback set-default-clicked(string);
+    callback refresh-account-clicked(string);
+    callback remove-account-clicked(string);
+    callback close-clicked();
+
+    VerticalLayout {
+        padding: Theme.space-lg;
+        spacing: Theme.space-md;
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            Text {
+                text: "Accounts";
+                font-size: Theme.font-lg;
+                font-weight: 600;
+                color: Theme.text-primary;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+
+            CrabButton {
+                text: "Add Offline";
+                icon: @image-url("../../assets/icons/user-plus.svg");
+                has-icon: true;
+                variant: "primary";
+                clicked => {
+                    root.add-offline-clicked();
+                }
+            }
+
+            CrabButton {
+                text: "Add Microsoft";
+                icon: @image-url("../../assets/icons/microsoft.svg");
+                has-icon: true;
+                variant: "secondary";
+                enabled: !root.auth-in-progress;
+                clicked => {
+                    root.add-account-clicked();
+                }
+            }
+        }
+
+        if root.keyring-warning != "": Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: Theme.warning-bg;
+            border-width: 1px;
+            border-color: Theme.warning-border;
+
+            HorizontalLayout {
+                padding-left: Theme.space-sm;
+                padding-right: Theme.space-sm;
+                Text {
+                    text: root.keyring-warning;
+                    font-size: Theme.font-xs;
+                    color: Theme.warning-text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-secondary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            if root.accounts.length == 0: Text {
+                text: "No accounts added yet. Add an Offline or Microsoft account to play.";
+                font-size: Theme.font-sm;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if root.accounts.length > 0: ListView {
+                for acc in root.accounts: Rectangle {
+                    height: 38px;
+                    background: acc.id == root.selected-account-id
+                        ? Theme.accent-muted
+                        : acc-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                    acc-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.selected-account-id = acc.id;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-md;
+                        padding-right: Theme.space-md;
+                        spacing: Theme.space-sm;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("../../assets/icons/steve-head.svg");
+                                width: 20px;
+                                height: 20px;
+                                image-rendering: pixelated;
+                            }
+                        }
+
+                        Text {
+                            text: acc.is-default ? acc.username + " (Active)" : acc.username;
+                            font-size: Theme.font-sm;
+                            font-weight: acc.is-default ? 600 : 400;
+                            color: acc.id == root.selected-account-id ? Theme.accent : Theme.text-primary;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: acc.kind;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        width: parent.width;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        if root.error-message != "": Rectangle {
+            border-radius: Theme.radius-sm;
+            background: Theme.error-bg;
+            border-width: 1px;
+            border-color: Theme.error-border;
+
+            VerticalLayout {
+                padding: Theme.space-sm;
+                Text {
+                    text: root.error-message;
+                    font-size: Theme.font-xs;
+                    color: Theme.error-text;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            CrabButton {
+                text: "Set Default";
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "secondary";
+                enabled: root.selected-account-id != "";
+                clicked => {
+                    root.set-default-clicked(root.selected-account-id);
+                }
+            }
+
+            CrabButton {
+                text: "Refresh";
+                icon: @image-url("../../assets/icons/refresh.svg");
+                has-icon: true;
+                variant: "secondary";
+                enabled: root.selected-account-id != "" && !root.auth-in-progress;
+                clicked => {
+                    root.refresh-account-clicked(root.selected-account-id);
+                }
+            }
+
+            CrabButton {
+                text: "Remove";
+                icon: @image-url("../../assets/icons/trash.svg");
+                has-icon: true;
+                variant: "flat-danger";
+                enabled: root.selected-account-id != "";
+                clicked => {
+                    root.remove-account-clicked(root.selected-account-id);
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            CrabButton {
+                text: "Close";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => {
+                    root.close-clicked();
+                }
+            }
+        }
+    }
+}

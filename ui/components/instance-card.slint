@@ -1,0 +1,227 @@
+import { Theme } from "../theme.slint";
+
+/// Bloco compacto de instância (design estilo Prism Launcher: fundo transparente,
+/// sem borda externa, destaque de seleção aplicado exclusivamente ao label).
+export component InstanceCard inherits Rectangle {
+    in property <string> name;
+    in property <string> version;
+    in property <string> modloader: "";
+    in property <string> modloader-kind: "";
+    in property <image> custom-icon;
+    in property <bool> has-custom-icon: false;
+    in property <string> install-status: "not_installed";
+    in property <bool> is-running: false;
+    in property <bool> selected: false;
+
+    // Preferências de aparência do grid (Settings -> Appearance -> Instance Grid)
+    in property <length> icon-px: 44px;
+    in property <bool> show-name: true;
+    in property <bool> show-version: false;
+    in property <bool> show-modloader: false;
+
+    callback clicked();
+    callback double-clicked();
+    callback right-clicked(length, length);
+    callback drag-started(string, length, length);
+    callback drag-moved(length, length);
+    callback drag-ended(length, length);
+
+    private property <bool> left-down: false;
+    private property <bool> dragging: false;
+    private property <length> press-x: 0px;
+    private property <length> press-y: 0px;
+
+    width: 104px;
+    height: root.icon-px + 54px;
+    background: transparent;
+
+    touch := TouchArea {
+        mouse-cursor: root.dragging ? grabbing : pointer;
+        clicked => {
+            if (!root.dragging) {
+                root.clicked();
+            }
+        }
+        double-clicked => {
+            root.double-clicked();
+        }
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                root.right-clicked(
+                    self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y
+                );
+            } else if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                root.left-down = true;
+                root.dragging = false;
+                root.press-x = self.mouse-x;
+                root.press-y = self.mouse-y;
+            } else if (ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel) {
+                if (root.dragging) {
+                    root.drag-ended(
+                        self.absolute-position.x + self.mouse-x,
+                        self.absolute-position.y + self.mouse-y
+                    );
+                }
+                root.dragging = false;
+                root.left-down = false;
+            }
+        }
+        moved => {
+            if (root.left-down && !root.dragging) {
+                if (abs(self.mouse-x - root.press-x) > 8px || abs(self.mouse-y - root.press-y) > 8px) {
+                    root.dragging = true;
+                    root.drag-started(
+                        root.name,
+                        self.absolute-position.x + self.mouse-x,
+                        self.absolute-position.y + self.mouse-y
+                    );
+                }
+            } else if (root.dragging) {
+                root.drag-moved(
+                    self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y
+                );
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 6px;
+        padding-bottom: 4px;
+        spacing: 5px;
+        alignment: start;
+
+        // Ícone superior + pequeno indicador de estado (Running / Installing / Error)
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: root.icon-px + 8px;
+                height: root.icon-px + 4px;
+                background: transparent;
+
+                if !root.has-custom-icon: Image {
+                    x: 4px;
+                    y: 2px;
+                    source: @image-url("../../assets/icons/cube.svg");
+                    width: root.icon-px;
+                    height: root.icon-px;
+                    colorize: Theme.accent;
+                }
+
+                if root.has-custom-icon: Image {
+                    x: 4px;
+                    y: 2px;
+                    source: root.custom-icon;
+                    width: root.icon-px;
+                    height: root.icon-px;
+                    image-fit: contain;
+                }
+
+                // Indicador compacto próximo ao ícone
+                if root.is-running
+                    || root.install-status == "installing"
+                    || root.install-status == "failed"
+                    || root.install-status == "incomplete": Rectangle {
+                    x: parent.width - 10px;
+                    y: 1px;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: Theme.bg-primary;
+                    background: root.is-running
+                        ? Theme.success
+                        : root.install-status == "installing"
+                            ? Theme.accent
+                            : root.install-status == "failed"
+                                ? Theme.danger
+                                : Theme.warning-text;
+                }
+            }
+        }
+
+        // Label inferior com cantos discretamente arredondados (única área destacada no Hover/Selected)
+        if root.show-name: HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                border-radius: Theme.radius-sm;
+                background: root.selected
+                    ? Theme.accent
+                    : touch.has-hover
+                        ? Theme.bg-interactive
+                        : transparent;
+
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    spacing: 4px;
+
+                    Text {
+                        text: root.name;
+                        font-size: Theme.font-sm;
+                        font-weight: root.selected ? 600 : 500;
+                        color: root.selected ? Theme.text-on-accent : Theme.text-primary;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                        overflow: elide;
+                        max-width: root.show-modloader && root.modloader-kind != "" ? 72px : 88px;
+                        max-height: 30px;
+                    }
+
+                    if root.show-modloader && root.modloader-kind != "": Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        y: (parent.height - self.height) / 2;
+
+                        if root.modloader-kind == "fabric": Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../../assets/modloaders/fabric.png");
+                            image-fit: contain;
+                        }
+                        if root.modloader-kind == "forge": Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../../assets/modloaders/forge.jpg");
+                            image-fit: contain;
+                        }
+                        if root.modloader-kind == "neoforge": Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../../assets/modloaders/neoforge.png");
+                            image-fit: contain;
+                        }
+                        if root.modloader-kind == "quilt": Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../../assets/modloaders/quilt.png");
+                            image-fit: contain;
+                        }
+                        if root.modloader-kind == "liteloader": Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../../assets/modloaders/liteloader.png");
+                            image-fit: contain;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Versão opcional (oculta por padrão)
+        if root.show-version: Text {
+            text: root.version;
+            font-size: Theme.font-xs;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}

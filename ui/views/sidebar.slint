@@ -1,0 +1,317 @@
+import { Theme } from "../theme.slint";
+import { Strings } from "../strings.slint";
+import { CrabButton } from "../components/button.slint";
+
+/// Painel lateral compacto de ações da instância (referência: Prism Launcher).
+export component InstanceSidebar inherits Rectangle {
+    in property <bool> has-selection: false;
+    in property <string> instance-name;
+    in property <string> minecraft-version;
+    in property <string> modloader-display: "";
+    in property <string> playtime-display: "";
+    in property <string> last-played-display: "";
+    in property <image> custom-icon;
+    in property <bool> has-custom-icon: false;
+    in property <string> group-name: "Ungrouped";
+    in property <string> install-status-code: "not_installed";
+    in property <string> install-status-label: "Not installed";
+    in property <string> install-error: "";
+    in property <bool> is-running: false;
+    in property <length> window-width: 1100px;
+    in property <length> window-height: 700px;
+    in property <length> blur-offset-x: 0px;
+    in property <length> blur-offset-y: 0px;
+
+    callback launch-clicked();
+    callback stop-clicked();
+    callback console-clicked();
+    callback install-clicked();
+    callback repair-clicked();
+    callback edit-clicked();
+    callback change-icon-clicked();
+    callback change-group-clicked();
+    callback open-folder-clicked();
+    callback delete-clicked();
+
+    private property <bool> is-installing: root.install-status-code == "installing";
+    private property <bool> needs-install: root.install-status-code == "not_installed"
+        || root.install-status-code == "incomplete"
+        || root.install-status-code == "failed";
+
+    width: Theme.sidebar-width;
+    background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
+    clip: true;
+
+    // Blur real do wallpaper Vice alinhado às coordenadas da janela principal
+    if Theme.is-vice-theme: Image {
+        x: -root.blur-offset-x;
+        y: -root.blur-offset-y;
+        width: root.window-width;
+        height: root.window-height;
+        source: @image-url("../../assets/themes/vice/wallpaper-blurred.png");
+        image-fit: cover;
+    }
+    if Theme.is-vice-theme: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #30253888;
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: Theme.border;
+    }
+
+    if !root.has-selection: VerticalLayout {
+        padding: Theme.space-lg;
+        spacing: Theme.space-xs;
+        alignment: center;
+
+        Text {
+            text: Strings.no-selection-title;
+            font-size: Theme.font-sm;
+            font-weight: 600;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: Strings.no-selection-hint;
+            font-size: Theme.font-xs;
+            color: Theme.text-disabled;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+
+    if root.has-selection: VerticalLayout {
+        padding: Theme.space-md;
+        spacing: Theme.space-sm;
+        alignment: start;
+
+        // Cabeçalho compacto: ícone + nome + versão
+        VerticalLayout {
+            spacing: 4px;
+            alignment: start;
+
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 64px;
+                    height: 64px;
+                    border-radius: Theme.radius-sm;
+                    background: icon-touch.has-hover ? Theme.bg-interactive : transparent;
+                    icon-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.change-icon-clicked(); }
+                    }
+                    if !root.has-custom-icon: Image {
+                        x: 4px;
+                        y: 4px;
+                        source: @image-url("../../assets/icons/cube.svg");
+                        width: 56px;
+                        height: 56px;
+                        colorize: Theme.accent;
+                    }
+                    if root.has-custom-icon: Image {
+                        x: 4px;
+                        y: 4px;
+                        source: root.custom-icon;
+                        width: 56px;
+                        height: 56px;
+                        image-fit: contain;
+                    }
+                }
+            }
+
+            Text {
+                text: root.instance-name;
+                font-family: Theme.display-font-family;
+                font-size: Theme.is-vice-theme ? 20px : Theme.font-lg;
+                font-weight: 600;
+                color: Theme.text-primary;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.modloader-display != ""
+                    ? "MC " + root.minecraft-version + " • " + root.modloader-display
+                    : "Minecraft " + root.minecraft-version;
+                font-size: Theme.font-xs;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            if root.is-running || root.install-status-code != "installed": Text {
+                text: root.is-running ? "Running" : root.install-status-label;
+                font-size: Theme.font-xs;
+                font-weight: 600;
+                horizontal-alignment: center;
+                color: root.is-running
+                    ? Theme.accent
+                    : root.install-status-code == "installing"
+                        ? Theme.accent
+                        : root.install-status-code == "failed"
+                            ? Theme.error-text
+                            : root.install-status-code == "incomplete"
+                                ? Theme.warning-text
+                                : Theme.text-secondary;
+            }
+
+            if root.install-error != "": Rectangle {
+                border-radius: Theme.radius-sm;
+                background: Theme.error-bg;
+                border-width: 1px;
+                border-color: Theme.error-border;
+
+                VerticalLayout {
+                    padding: Theme.space-xs;
+                    Text {
+                        text: root.install-error;
+                        font-size: Theme.font-xs;
+                        color: Theme.error-text;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+
+        // Ação principal (Launch / Stop)
+        VerticalLayout {
+            spacing: 2px;
+
+            if !root.is-running: CrabButton {
+                text: Strings.launch;
+                icon: @image-url("../../assets/icons/play.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: !root.is-installing;
+                align-left: true;
+                clicked => {
+                    root.launch-clicked();
+                }
+            }
+
+            if root.is-running: CrabButton {
+                text: "Stop Game";
+                icon: @image-url("../../assets/icons/square.svg");
+                has-icon: true;
+                variant: "danger";
+                align-left: true;
+                clicked => {
+                    root.stop-clicked();
+                }
+            }
+
+            if root.is-running: CrabButton {
+                text: "View Console";
+                icon: @image-url("../../assets/icons/terminal.svg");
+                has-icon: true;
+                variant: "ghost";
+                align-left: true;
+                clicked => {
+                    root.console-clicked();
+                }
+            }
+
+            if root.needs-install && !root.is-running: CrabButton {
+                text: root.install-status-code == "not_installed"
+                    ? Strings.install-instance
+                    : Strings.retry-install;
+                icon: @image-url("../../assets/icons/download.svg");
+                has-icon: true;
+                variant: "ghost";
+                enabled: !root.is-installing;
+                align-left: true;
+                clicked => {
+                    root.install-clicked();
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+
+        // Ações de gerenciamento (botões planos compactos)
+        VerticalLayout {
+            spacing: 2px;
+
+            CrabButton {
+                text: Strings.edit-instance;
+                icon: @image-url("../../assets/icons/edit.svg");
+                has-icon: true;
+                variant: "ghost";
+                align-left: true;
+                clicked => {
+                    root.edit-clicked();
+                }
+            }
+
+            CrabButton {
+                text: "Change Group";
+                icon: @image-url("../../assets/icons/folder-plus.svg");
+                has-icon: true;
+                variant: "ghost";
+                align-left: true;
+                clicked => {
+                    root.change-group-clicked();
+                }
+            }
+
+            CrabButton {
+                text: Strings.open-folder;
+                icon: @image-url("../../assets/icons/folder.svg");
+                has-icon: true;
+                variant: "ghost";
+                align-left: true;
+                clicked => {
+                    root.open-folder-clicked();
+                }
+            }
+
+            if root.install-status-code == "installed"
+                || root.install-status-code == "incomplete"
+                || root.install-status-code == "failed": CrabButton {
+                text: Strings.repair-instance;
+                icon: @image-url("../../assets/icons/wrench.svg");
+                has-icon: true;
+                variant: "ghost";
+                enabled: !root.is-installing && !root.is-running;
+                align-left: true;
+                clicked => {
+                    root.repair-clicked();
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+
+        // Ação destrutiva discreta (texto/ícone vermelho no hover, sem botão gigante isolado)
+        CrabButton {
+            text: Strings.delete-instance;
+            icon: @image-url("../../assets/icons/trash.svg");
+            has-icon: true;
+            variant: "flat-danger";
+            enabled: !root.is-running;
+            align-left: true;
+            clicked => {
+                root.delete-clicked();
+            }
+        }
+    }
+}

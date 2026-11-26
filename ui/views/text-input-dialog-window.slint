@@ -1,0 +1,83 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela nativa reutilizável de entrada de texto (Create/Rename Group, Copy Instance, Rename World, Rename Icon).
+export component TextInputDialogWindow inherits Window {
+    title: root.window-title;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 380px;
+    preferred-height: 164px;
+    min-width: 340px;
+    min-height: 156px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> window-title: "Input — Crab";
+    in-out property <string> heading: "";
+    in-out property <string> subtitle: "";
+    in-out property <string> input-text: "";
+    in-out property <string> placeholder: "";
+    in-out property <string> confirm-label: "Save";
+    in-out property <string> error-message: "";
+
+    callback confirmed(string);
+    callback cancelled();
+
+    public function focus-input() {
+        text-field.focus-and-select-all();
+    }
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: root.heading;
+        subtitle: root.subtitle;
+        escape-pressed => { root.cancelled(); }
+
+        text-field := CrabTextInput {
+            text <=> root.input-text;
+            placeholder: root.placeholder;
+            accepted(val) => {
+                if (val != "") {
+                    root.confirmed(val);
+                }
+            }
+        }
+
+        if root.error-message != "": Text {
+            text: root.error-message;
+            font-size: Theme.font-xs;
+            color: Theme.error-text;
+            overflow: elide;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancelled(); }
+            }
+
+            CrabButton {
+                text: root.confirm-label;
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.input-text != "";
+                clicked => { root.confirmed(root.input-text); }
+            }
+        }
+    }
+}

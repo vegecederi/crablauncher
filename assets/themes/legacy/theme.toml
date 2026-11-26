@@ -1,0 +1,33 @@
+schema_version = 1
+
+[metadata]
+id = "legacy"
+name = "Legacy"
+author = "Crab Team"
+version = "1.0.0"
+description = "Nostalgic Alpha & Beta inspired mossy earth palette."
+base = "crab-dark"
+
+[colors]
+background = "#242820"
+surface = "#30362b"
+surface_elevated = "#414735"
+border = "#515b43"
+border_subtle = "#3b4233"
+accent = "#92b85c"
+accent_hover = "#a3c96e"
+accent_pressed = "#7ea349"
+accent_muted = "#92b85c28"
+accent_foreground = "#181c14"
+text_primary = "#e1dfcf"
+text_secondary = "#b1b49e"
+text_disabled = "#6f7561"
+hover = "#4a523e"
+pressed = "#2b3025"
+danger = "#c9544d"
+success = "#92b85c"
+warning = "#d9b35b"
+console_bg = "#1b1f18"
+
+[geometry]
+border_radius = 2

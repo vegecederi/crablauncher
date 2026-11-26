@@ -1,0 +1,320 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+
+export struct ConsoleLogLine {
+    timestamp: string,
+    level: string, // "info" | "warn" | "error" | "debug"
+    message: string,
+}
+
+export component ConsoleWindow inherits Window {
+    title: "Minecraft Console — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    forward-focus: console-key-scope;
+    preferred-width: 840px;
+    preferred-height: 540px;
+    min-width: 600px;
+    min-height: 360px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-name: "";
+    in property <string> process-status: "Idle";
+    in property <bool> is-running: false;
+    in-out property <string> search-query: "";
+    in-out property <bool> autoscroll: true;
+    in-out property <bool> word-wrap: true;
+    in property <bool> show-timestamps: true;
+    in property <bool> colorize-levels: true;
+    in property <bool> use-theme-font: true;
+    in property <string> custom-font-family: "JetBrains Mono";
+    in-out property <length> console-font-size: 12px;
+    in property <length> base-font-size: 12px;
+    in property <length> line-spacing: 2px;
+    in property <bool> confirm-before-clear: false;
+    in-out property <bool> show-clear-confirm: false;
+    in property <[ConsoleLogLine]> lines: [];
+
+    private property <bool> ctrl-held: false;
+
+    callback search-changed(string);
+    callback copy-log-clicked();
+    callback clear-clicked();
+    callback open-log-folder-clicked();
+    callback stop-game-clicked();
+
+    VerticalLayout {
+        // Barra superior do console
+        Rectangle {
+            height: 46px;
+            background: Theme.bg-secondary;
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.instance-name;
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    height: 22px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.bg-primary;
+                    border-width: 1px;
+                    border-color: root.is-running ? Theme.accent : Theme.border;
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-sm;
+                        padding-right: Theme.space-sm;
+                        Text {
+                            text: root.process-status;
+                            font-size: Theme.font-xs;
+                            color: root.is-running ? Theme.accent : Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                CrabButton {
+                    text: "Copy Log";
+                    icon: @image-url("../../assets/icons/copy.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.copy-log-clicked();
+                    }
+                }
+
+                CrabButton {
+                    text: "Clear";
+                    icon: @image-url("../../assets/icons/trash.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        if (root.confirm-before-clear) {
+                            root.show-clear-confirm = true;
+                        } else {
+                            root.clear-clicked();
+                        }
+                    }
+                }
+
+                CrabButton {
+                    text: "Open Log Folder";
+                    icon: @image-url("../../assets/icons/folder.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.open-log-folder-clicked();
+                    }
+                }
+
+                CrabButton {
+                    text: "Stop Game";
+                    icon: @image-url("../../assets/icons/square.svg");
+                    has-icon: true;
+                    variant: "danger";
+                    enabled: root.is-running;
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.stop-game-clicked();
+                    }
+                }
+            }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+        }
+
+        // Confirmação inline ao limpar console quando habilitado
+        if root.show-clear-confirm: Rectangle {
+            height: 38px;
+            background: Theme.warning-bg;
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: "Clear visible console output? Log files on disk are preserved.";
+                    font-size: Theme.font-xs;
+                    color: Theme.warning-text;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                CrabButton {
+                    text: "Cancel";
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.show-clear-confirm = false; }
+                }
+
+                CrabButton {
+                    text: "Confirm Clear";
+                    variant: "danger";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.show-clear-confirm = false;
+                        root.clear-clicked();
+                    }
+                }
+            }
+        }
+
+        // Barra de pesquisa, autoscroll e word wrap
+        Rectangle {
+            height: 40px;
+            background: Theme.bg-primary;
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                CrabTextInput {
+                    horizontal-stretch: 1;
+                    y: (parent.height - self.height) / 2;
+                    text <=> root.search-query;
+                    placeholder: "Filter logs...";
+                    leading-icon: @image-url("../../assets/icons/search.svg");
+                    has-leading-icon: true;
+                    edited(q) => {
+                        root.search-changed(q);
+                    }
+                }
+
+                CrabCheckbox {
+                    y: (parent.height - self.height) / 2;
+                    label: "Word Wrap";
+                    checked <=> root.word-wrap;
+                }
+
+                CrabCheckbox {
+                    y: (parent.height - self.height) / 2;
+                    label: "Autoscroll";
+                    checked <=> root.autoscroll;
+                }
+            }
+        }
+
+        // Área de logs monoespaçada (zoom Ctrl+Scroll / Ctrl++ / Ctrl+- / Ctrl+0 afeta somente o console)
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.console-bg;
+            clip: true;
+
+            console-key-scope := FocusScope {
+                key-pressed(ev) => {
+                    root.ctrl-held = ev.modifiers.control;
+                    if (ev.modifiers.control) {
+                        if (ev.text == "+" || ev.text == "=") {
+                            root.console-font-size = min(28px, root.console-font-size + 1px);
+                            return accept;
+                        }
+                        if (ev.text == "-") {
+                            root.console-font-size = max(8px, root.console-font-size - 1px);
+                            return accept;
+                        }
+                        if (ev.text == "0") {
+                            root.console-font-size = root.base-font-size;
+                            return accept;
+                        }
+                    }
+                    reject
+                }
+                key-released(ev) => {
+                    root.ctrl-held = ev.modifiers.control;
+                    reject
+                }
+            }
+
+            ListView {
+                width: parent.width;
+                height: parent.height;
+
+                for line in root.lines: Rectangle {
+                    min-height: root.console-font-size + root.line-spacing + 6px;
+                    background: transparent;
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-sm;
+                        padding-right: Theme.space-sm;
+                        padding-top: root.line-spacing / 2;
+                        padding-bottom: root.line-spacing / 2;
+                        spacing: Theme.space-sm;
+
+                        if root.show-timestamps: Text {
+                            text: "[" + line.timestamp + "]";
+                            font-family: root.use-theme-font ? Theme.console-font-family : root.custom-font-family;
+                            font-size: root.console-font-size;
+                            color: Theme.text-disabled;
+                            vertical-alignment: top;
+                        }
+
+                        Text {
+                            text: line.message;
+                            font-family: root.use-theme-font ? Theme.console-font-family : root.custom-font-family;
+                            font-size: root.console-font-size;
+                            color: !root.colorize-levels
+                                ? Theme.text-primary
+                                : line.level == "error"
+                                    ? Theme.error-text
+                                    : line.level == "warn"
+                                        ? Theme.warning-text
+                                        : line.level == "debug"
+                                            ? Theme.text-secondary
+                                            : Theme.text-primary;
+                            horizontal-stretch: 1;
+                            wrap: root.word-wrap ? TextWrap.word-wrap : TextWrap.no-wrap;
+                        }
+                    }
+                }
+            }
+
+            // Captura Ctrl+Scroll sem bloquear a rolagem normal do ListView
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+                scroll-event(ev) => {
+                    if (root.ctrl-held && ev.delta-y != 0px) {
+                        if (ev.delta-y > 0px) {
+                            root.console-font-size = min(28px, root.console-font-size + 1px);
+                        } else {
+                            root.console-font-size = max(8px, root.console-font-size - 1px);
+                        }
+                        return accept;
+                    }
+                    reject
+                }
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down) {
+                        console-key-scope.focus();
+                    }
+                }
+            }
+        }
+    }
+}

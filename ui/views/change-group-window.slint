@@ -1,0 +1,249 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabContextMenu, ContextMenuItem } from "../components/context-menu.slint";
+import { GroupOption } from "edit-instance-window.slint";
+
+/// Janela independente "Change Group" reutilizada por toda a interface.
+export component ChangeGroupWindow inherits Window {
+    title: "Change Group — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 420px;
+    preferred-height: 440px;
+    min-width: 360px;
+    min-height: 360px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-id: "";
+    in property <string> instance-name: "";
+    in property <[GroupOption]> groups: [];
+    in-out property <string> selected-group-id: "";
+    in-out property <string> search-query: "";
+    in-out property <string> new-group-name: "";
+    in property <string> error-message: "";
+
+    private property <bool> show-group-context-menu: false;
+    private property <length> context-x: 0px;
+    private property <length> context-y: 0px;
+    private property <string> context-group-id: "";
+    private property <string> context-group-name: "";
+    private property <bool> show-rename-dialog: false;
+    private property <string> rename-input: "";
+
+    callback search-changed(string);
+    callback create-group-clicked(string);
+    callback rename-group-clicked(string, string);
+    callback request-rename-group-dialog(string, string); // (group_id, new_name)
+    callback delete-group-clicked(string);         // (group_id)
+    callback apply-clicked(string, string); // (instance_id, group_id)
+    callback cancel-clicked();
+
+    VerticalLayout {
+        padding: Theme.space-lg;
+        spacing: Theme.space-md;
+
+        // Cabeçalho com ícone e nome da instância
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            Image {
+                source: @image-url("../../assets/icons/cube.svg");
+                width: 28px;
+                height: 28px;
+                colorize: Theme.accent;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.instance-name;
+                    font-size: Theme.font-lg;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+                Text {
+                    text: "Select a group for this instance";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                }
+            }
+        }
+
+        CrabTextInput {
+            text <=> root.search-query;
+            placeholder: "Search groups...";
+            leading-icon: @image-url("../../assets/icons/search.svg");
+            has-leading-icon: true;
+            edited(q) => { root.search-changed(q); }
+        }
+
+        // Lista vertical de grupos + Ungrouped
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-secondary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            ListView {
+                width: parent.width;
+                height: parent.height;
+
+                for opt in root.groups: Rectangle {
+                    height: 32px;
+                    background: opt.id == root.selected-group-id
+                        ? Theme.accent-muted
+                        : row-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                    row-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.selected-group-id = opt.id; }
+                        pointer-event(ev) => {
+                            if (ev.button == PointerEventButton.right
+                                && ev.kind == PointerEventKind.down
+                                && opt.id != "")
+                            {
+                                root.context-group-id = opt.id;
+                                root.context-group-name = opt.name;
+                                root.context-x = min(max(8px, self.absolute-position.x + self.mouse-x), root.width - 180px);
+                                root.context-y = min(max(8px, self.absolute-position.y + self.mouse-y), root.height - 84px);
+                                root.show-group-context-menu = true;
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-md;
+                        padding-right: Theme.space-md;
+                        spacing: Theme.space-sm;
+
+                        Text {
+                            text: opt.name;
+                            font-size: Theme.font-md;
+                            font-weight: opt.id == root.selected-group-id ? 600 : 400;
+                            color: opt.id == root.selected-group-id ? Theme.accent : Theme.text-primary;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+
+                        if opt.id == root.selected-group-id: VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("../../assets/icons/check.svg");
+                                width: 14px;
+                                height: 14px;
+                                colorize: Theme.accent;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        width: parent.width;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        // Criar novo grupo diretamente na janela
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            CrabTextInput {
+                horizontal-stretch: 1;
+                text <=> root.new-group-name;
+                placeholder: "New group name...";
+                accepted(val) => {
+                    if (val != "") {
+                        root.create-group-clicked(val);
+                        root.new-group-name = "";
+                    }
+                }
+            }
+
+            CrabButton {
+                text: "Create Group";
+                icon: @image-url("../../assets/icons/folder-plus.svg");
+                has-icon: true;
+                variant: "secondary";
+                enabled: root.new-group-name != "";
+                clicked => {
+                    root.create-group-clicked(root.new-group-name);
+                    root.new-group-name = "";
+                }
+            }
+        }
+
+        if root.error-message != "": Text {
+            text: root.error-message;
+            font-size: Theme.font-xs;
+            color: Theme.error-text;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Apply";
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "primary";
+                clicked => {
+                    root.apply-clicked(root.instance-id, root.selected-group-id);
+                }
+            }
+        }
+    }
+
+    // Menu de contexto para grupos reais (nunca exibido para No Group)
+    if root.show-group-context-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-group-context-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: root.context-x;
+            y: root.context-y;
+            menu-width: 172px;
+
+            ContextMenuItem {
+                text: "Rename Group";
+                icon: @image-url("../../assets/icons/edit.svg");
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.request-rename-group-dialog(root.context-group-id, root.context-group-name);
+                }
+            }
+
+            ContextMenuItem {
+                text: "Delete Group";
+                icon: @image-url("../../assets/icons/trash.svg");
+                danger: true;
+                clicked => {
+                    root.show-group-context-menu = false;
+                    root.delete-group-clicked(root.context-group-id);
+                }
+            }
+        }
+    }
+
+    // Diálogo inline de renomeação de grupo
+}

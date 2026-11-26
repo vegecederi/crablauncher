@@ -1,0 +1,286 @@
+import { ListView, TextEdit } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+
+export struct JvmPresetListItem {
+    id: string,
+    name: string,
+    description: string,
+    args: string,
+    min-java: int,
+    compatibility: string,
+    is-official: bool,
+}
+
+/// Janela compacta "Manage JVM Presets" para criar, editar, duplicar, importar e exportar presets TOML.
+export component ManageJvmPresetsWindow inherits Window {
+    title: "Manage JVM Presets — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 720px;
+    preferred-height: 500px;
+    min-width: 600px;
+    min-height: 420px;
+    background: Theme.bg-primary;
+
+    in property <[JvmPresetListItem]> presets: [];
+    in-out property <string> selected-id: "default";
+    in-out property <bool> selected-is-official: true;
+    in-out property <string> edit-name: "";
+    in-out property <string> edit-description: "";
+    in-out property <string> edit-args: "";
+    in-out property <string> edit-min-java: "8";
+    in property <string> status-message: "";
+    in property <string> error-message: "";
+
+    callback select-preset(string);
+    callback create-preset-clicked();
+    callback save-preset-clicked(string, string, string, string, string);
+    callback duplicate-preset-clicked(string);
+    callback delete-preset-clicked(string);
+    callback import-preset-clicked();
+    callback export-preset-clicked(string);
+    callback close-clicked();
+
+    VerticalLayout {
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // Lista esquerda de presets (Oficiais + Custom)
+            Rectangle {
+                width: 240px;
+                background: Theme.bg-secondary;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: Theme.space-sm;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-xs;
+                        CrabButton {
+                            horizontal-stretch: 1;
+                            text: "New";
+                            icon: @image-url("../../assets/icons/plus.svg");
+                            has-icon: true;
+                            variant: "primary";
+                            clicked => { root.create-preset-clicked(); }
+                        }
+                        CrabButton {
+                            text: "Import";
+                            icon: @image-url("../../assets/icons/download.svg");
+                            has-icon: true;
+                            variant: "secondary";
+                            clicked => { root.import-preset-clicked(); }
+                        }
+                    }
+
+                    ListView {
+                        vertical-stretch: 1;
+
+                        for p in root.presets: Rectangle {
+                            height: 44px;
+                            border-radius: Theme.radius-sm;
+                            background: p.id == root.selected-id
+                                ? Theme.accent-muted
+                                : p-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                            p-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.selected-id = p.id;
+                                    root.select-preset(p.id);
+                                }
+                            }
+
+                            VerticalLayout {
+                                padding-left: Theme.space-sm;
+                                padding-right: Theme.space-sm;
+                                alignment: center;
+                                spacing: 2px;
+
+                                HorizontalLayout {
+                                    spacing: 4px;
+                                    Text {
+                                        text: p.name;
+                                        font-size: Theme.font-sm;
+                                        font-weight: p.id == root.selected-id ? 600 : 500;
+                                        color: p.id == root.selected-id ? Theme.accent : Theme.text-primary;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: p.is-official ? "Official" : "Custom";
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                    }
+                                }
+                                Text {
+                                    text: p.compatibility;
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-secondary;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Editor direito
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding: Theme.space-lg;
+                spacing: Theme.space-md;
+                alignment: start;
+
+                HorizontalLayout {
+                    spacing: Theme.space-sm;
+                    Text {
+                        text: root.selected-is-official ? "Official Preset (Read-only)" : "Edit Custom Preset";
+                        font-size: Theme.font-lg;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    CrabButton {
+                        text: "Duplicate";
+                        icon: @image-url("../../assets/icons/copy.svg");
+                        has-icon: true;
+                        variant: "secondary";
+                        enabled: root.selected-id != "";
+                        clicked => { root.duplicate-preset-clicked(root.selected-id); }
+                    }
+                    CrabButton {
+                        text: "Export";
+                        icon: @image-url("../../assets/icons/external-link.svg");
+                        has-icon: true;
+                        variant: "secondary";
+                        enabled: root.selected-id != "";
+                        clicked => { root.export-preset-clicked(root.selected-id); }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "Preset Name"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                    CrabTextInput {
+                        text <=> root.edit-name;
+                        enabled: !root.selected-is-official;
+                        placeholder: "My Custom GC Preset";
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "Description"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                    CrabTextInput {
+                        text <=> root.edit-description;
+                        enabled: !root.selected-is-official;
+                        placeholder: "Short description of what these flags do...";
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.space-md;
+                    alignment: start;
+                    VerticalLayout {
+                        width: 150px;
+                        spacing: 4px;
+                        Text { text: "Minimum Java Major"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                        CrabTextInput {
+                            text <=> root.edit-min-java;
+                            enabled: !root.selected-is-official;
+                            placeholder: "17";
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    vertical-stretch: 1;
+                    spacing: 4px;
+                    Text {
+                        text: "JVM Arguments (do not include -Xms or -Xmx)";
+                        font-size: Theme.font-xs;
+                        color: Theme.text-secondary;
+                    }
+                    TextEdit {
+                        vertical-stretch: 1;
+                        text <=> root.edit-args;
+                        enabled: !root.selected-is-official;
+                        font-size: Theme.font-sm;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.space-sm;
+                    alignment: end;
+
+                    if !root.selected-is-official: CrabButton {
+                        text: "Delete";
+                        icon: @image-url("../../assets/icons/trash.svg");
+                        has-icon: true;
+                        variant: "flat-danger";
+                        clicked => { root.delete-preset-clicked(root.selected-id); }
+                    }
+
+                    if !root.selected-is-official: CrabButton {
+                        text: "Save Preset";
+                        icon: @image-url("../../assets/icons/save.svg");
+                        has-icon: true;
+                        variant: "primary";
+                        clicked => {
+                            root.save-preset-clicked(
+                                root.selected-id,
+                                root.edit-name,
+                                root.edit-description,
+                                root.edit-args,
+                                root.edit-min-java
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Rodapé
+        Rectangle {
+            height: 44px;
+            background: Theme.bg-secondary;
+
+            Rectangle { y: 0px; height: 1px; width: parent.width; background: Theme.border; }
+
+            HorizontalLayout {
+                padding-left: Theme.space-lg;
+                padding-right: Theme.space-lg;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.error-message != "" ? root.error-message : root.status-message;
+                    font-size: Theme.font-xs;
+                    color: root.error-message != "" ? Theme.error-text : Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "Close";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.close-clicked(); }
+                }
+            }
+        }
+    }
+}

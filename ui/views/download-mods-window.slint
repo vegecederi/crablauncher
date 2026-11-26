@@ -1,0 +1,870 @@
+import { ListView, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabCheckbox } from "../components/checkbox.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabDropdown, DropdownOption } from "../components/dropdown.slint";
+import { NavigationItem } from "../components/navigation-item.slint";
+
+export struct FilterOptionItem {
+    id: string,
+    label: string,
+    checked: bool,
+}
+
+export struct RemoteModListItem {
+    project-id: string,
+    title: string,
+    description: string,
+    author: string,
+    downloads-display: string,
+    homepage-url: string,
+    icon: image,
+    has-icon: bool,
+    installed: bool,
+    selected-for-download: bool,
+}
+
+export struct ReviewModItem {
+    title: string,
+    version-number: string,
+    file-name: string,
+    is-dependency: bool,
+}
+
+export struct DescriptionBlockItem {
+    kind: string, // "heading" | "subheading" | "paragraph" | "bullet" | "link" | "image" | "separator"
+    text: string,
+    url: string,
+    image: image,
+    has-image: bool,
+}
+
+/// Janela independente "Download Mods" redesenhada fielmente à estrutura do Prism Launcher,
+/// preservando a paleta, tipografia Inter e componentes do Crab.
+export component DownloadModsWindow inherits Window {
+    title: root.content-title + " — " + root.instance-name;
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 1020px;
+    preferred-height: 680px;
+    min-width: 860px;
+    min-height: 540px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-id: "";
+    in property <string> instance-name: "";
+    in property <string> content-title: "Download Mods";
+    in property <string> content-kind: "mods"; // "mods" | "resourcepacks" | "shaderpacks"
+    in property <string> filter-summary: ""; // Ex: "Minecraft 1.21.4 • Fabric"
+
+    // 0 = Modrinth, 1 = CurseForge
+    in-out property <int> active-provider: 0;
+    in-out property <string> search-query: "";
+    in-out property <string> sort-id: "relevance";
+    in-out property <string> sort-label: "Sort by Relevance";
+
+    in property <[RemoteModListItem]> results: [];
+    in-out property <string> selected-project-id: "";
+    in property <string> detail-title: "";
+    in property <string> detail-author: "";
+    in property <string> detail-description: "";
+    in property <string> detail-body: "";
+    in property <[DescriptionBlockItem]> detail-blocks: [];
+    in property <string> detail-homepage: "";
+    in property <string> detail-issues-url: "";
+    in property <string> detail-source-url: "";
+    in property <string> detail-discord-url: "";
+    in property <string> detail-wiki-url: "";
+    in property <bool> detail-installed: false;
+    in property <bool> detail-queued: false;
+
+    in property <[DropdownOption]> version-options: [];
+    in-out property <string> selected-version-id: "";
+    in-out property <string> selected-version-label: "Latest compatible";
+
+    in property <int> queued-count: 0;
+    in property <[ReviewModItem]> review-items: [];
+    in-out property <bool> show-review-modal: false;
+
+    in property <bool> is-searching: false;
+    in property <bool> is-loading-more: false;
+    in property <bool> can-load-more: false;
+    in property <bool> is-downloading: false;
+    in property <string> status-message: "";
+    in property <string> error-message: "";
+
+    // Painel lateral retrátil de filtros integrado
+    in-out property <bool> show-filters-panel: false;
+    in property <bool> show-modloaders: true;
+    in property <[FilterOptionItem]> filter-categories: [];
+    in property <[FilterOptionItem]> filter-modloaders: [];
+    in-out property <string> mc-version-filter: "";
+    in-out property <bool> filter-client-side: false;
+    in-out property <bool> filter-server-side: false;
+    in-out property <bool> hide-installed: false;
+
+    callback provider-changed(int);
+    callback filters-clicked();
+    callback toggle-filter-category(string);
+    callback toggle-filter-modloader(string);
+    callback filters-changed();
+    callback reset-filters-clicked();
+    callback search-edited();
+    callback search-triggered();
+    callback load-more-triggered();
+    callback sort-changed(string);
+    callback mod-selected(string);
+    callback version-selected(string);
+    callback toggle-queue-clicked(string);
+    callback open-homepage-clicked(string);
+    callback review-clicked();
+    callback confirm-download-clicked();
+    callback close-clicked();
+
+    VerticalLayout {
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // 1. Sidebar esquerda: Modrinth e CurseForge com logos oficiais
+            Rectangle {
+                width: 152px;
+                background: Theme.bg-secondary;
+
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+
+                VerticalLayout {
+                    padding: Theme.space-sm;
+                    spacing: Theme.space-xs;
+
+                    NavigationItem {
+                        label: "Modrinth";
+                        icon: @image-url("../../assets/providers/modrinth.svg");
+                        preserve-icon-colors: true;
+                        selected: root.active-provider == 0;
+                        clicked => {
+                            root.active-provider = 0;
+                            root.provider-changed(0);
+                        }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // 2. Área principal (Cabeçalho + Pesquisa + 2 painéis iguais + Controles inferiores)
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                // Título do provedor ativo
+                Text {
+                    text: root.active-provider == 0 ? "Modrinth" : "CurseForge";
+                    font-size: Theme.font-xl;
+                    font-weight: 700;
+                    color: Theme.text-primary;
+                }
+
+                // Barra superior: Filter + Search Bar + Search (altura e alinhamento uniformes)
+                HorizontalLayout {
+                    spacing: Theme.space-sm;
+
+                    CrabButton {
+                        height: Theme.button-height;
+                        text: "Filter";
+                        icon: @image-url("../../assets/icons/sliders-horizontal.svg");
+                        has-icon: true;
+                        variant: root.show-filters-panel ? "primary" : "secondary";
+                        clicked => {
+                            root.show-filters-panel = !root.show-filters-panel;
+                            root.filters-clicked();
+                        }
+                    }
+
+                    search-input := CrabTextInput {
+                        horizontal-stretch: 1;
+                        text <=> root.search-query;
+                        placeholder: "Search...";
+                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        has-leading-icon: true;
+                        edited => { root.search-edited(); }
+                        accepted => { root.search-triggered(); }
+                    }
+                }
+
+                if root.error-message != "": Rectangle {
+                    height: 30px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.error-bg;
+                    border-width: 1px;
+                    border-color: Theme.error-border;
+                    HorizontalLayout {
+                        padding-left: Theme.space-sm;
+                        padding-right: Theme.space-sm;
+                        Text {
+                            text: root.error-message;
+                            font-size: Theme.font-xs;
+                            color: Theme.error-text;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                // Divisão central: Painel retrátil de filtros (opcional) + Lista de resultados + Detalhes do projeto
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: Theme.space-sm;
+
+                    if root.show-filters-panel: Rectangle {
+                        width: 236px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            padding: Theme.space-sm;
+                            spacing: Theme.space-sm;
+
+                            HorizontalLayout {
+                                spacing: Theme.space-xs;
+                                Text {
+                                    text: "Filters";
+                                    font-size: Theme.font-sm;
+                                    font-weight: 600;
+                                    color: Theme.text-primary;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+                                CrabButton {
+                                    text: "Reset";
+                                    variant: "ghost";
+                                    clicked => { root.reset-filters-clicked(); }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 12px;
+                                    padding-top: 2px;
+                                    padding-bottom: 6px;
+                                    padding-right: 4px;
+
+                                    VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Minecraft Version";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        CrabTextInput {
+                                            text <=> root.mc-version-filter;
+                                            placeholder: "All versions";
+                                            accepted => { root.filters-changed(); }
+                                            edited => { root.filters-changed(); }
+                                        }
+                                    }
+
+                                    if root.show-modloaders && root.filter-modloaders.length > 0: VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Modloaders";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        for ml in root.filter-modloaders: CrabCheckbox {
+                                            label: ml.label;
+                                            checked: ml.checked;
+                                            toggled => { root.toggle-filter-modloader(ml.id); }
+                                        }
+                                    }
+
+                                    if root.content-kind == "mods": VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Environments";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        CrabCheckbox {
+                                            label: "Client";
+                                            checked <=> root.filter-client-side;
+                                            toggled => { root.filters-changed(); }
+                                        }
+                                        CrabCheckbox {
+                                            label: "Server";
+                                            checked <=> root.filter-server-side;
+                                            toggled => { root.filters-changed(); }
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Options";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        CrabCheckbox {
+                                            label: "Hide Installed";
+                                            checked <=> root.hide-installed;
+                                            toggled => { root.filters-changed(); }
+                                        }
+                                    }
+
+                                    if root.filter-categories.length > 0: VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Categories";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        for cat in root.filter-categories: CrabCheckbox {
+                                            label: cat.label;
+                                            checked: cat.checked;
+                                            toggled => { root.toggle-filter-category(cat.id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Painel Esquerdo: Lista de mods com checkbox + ícone real + ordenação abaixo
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            if root.is-searching: spinner-box := Rectangle {
+                                private property <float> spin-phase: mod(animation-tick() / 1ms, 900) / 900.0;
+                                private property <angle> spin-angle: self.spin-phase * 360deg;
+
+                                Rectangle {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 30px;
+                                    height: 30px;
+                                    border-radius: 15px;
+                                    border-width: 2.5px;
+                                    border-color: Theme.border;
+
+                                    Rectangle {
+                                        x: 15px + 12px * Math.cos(spinner-box.spin-angle) - 3px;
+                                        y: 15px + 12px * Math.sin(spinner-box.spin-angle) - 3px;
+                                        width: 6px;
+                                        height: 6px;
+                                        border-radius: 3px;
+                                        background: Theme.accent;
+                                    }
+                                }
+                            }
+
+                            if !root.is-searching && root.results.length == 0 && root.error-message != "": Text {
+                                text: "Failed to load results. Check your connection and try again.";
+                                font-size: Theme.font-sm;
+                                color: Theme.error-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            if !root.is-searching && root.results.length == 0 && root.error-message == "": Text {
+                                text: root.content-kind == "resourcepacks"
+                                    ? "No compatible resource packs found."
+                                    : root.content-kind == "shaderpacks"
+                                        ? "No compatible shader packs found."
+                                        : "No compatible mods found.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            if !root.is-searching && root.results.length > 0: mod-list-scope := FocusScope {
+                                private property <int> selected-idx: 0;
+
+                                key-pressed(ev) => {
+                                    if (ev.modifiers.control && (ev.text == "f" || ev.text == "F")) {
+                                        search-input.focus-input();
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.DownArrow && root.results.length > 0) {
+                                        self.selected-idx = min(root.results.length - 1, self.selected-idx + 1);
+                                        root.selected-project-id = root.results[self.selected-idx].project-id;
+                                        root.mod-selected(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.UpArrow && root.results.length > 0) {
+                                        self.selected-idx = max(0, self.selected-idx - 1);
+                                        root.selected-project-id = root.results[self.selected-idx].project-id;
+                                        root.mod-selected(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.Home && root.results.length > 0) {
+                                        self.selected-idx = 0;
+                                        root.selected-project-id = root.results[0].project-id;
+                                        root.mod-selected(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.End && root.results.length > 0) {
+                                        self.selected-idx = root.results.length - 1;
+                                        root.selected-project-id = root.results[self.selected-idx].project-id;
+                                        root.mod-selected(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.PageDown && root.results.length > 0) {
+                                        self.selected-idx = min(root.results.length - 1, self.selected-idx + 8);
+                                        root.selected-project-id = root.results[self.selected-idx].project-id;
+                                        root.mod-selected(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    if (ev.text == Key.PageUp && root.results.length > 0) {
+                                        self.selected-idx = max(0, self.selected-idx - 8);
+                                        root.selected-project-id = root.results[self.selected-idx].project-id;
+                                        root.mod-selected(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    if ((ev.text == Key.Return || ev.text == " ") && root.selected-project-id != "") {
+                                        root.toggle-queue-clicked(root.selected-project-id);
+                                        return accept;
+                                    }
+                                    reject
+                                }
+
+                                mod-list-view := ListView {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    scrolled => {
+                                        if (root.can-load-more && !root.is-loading-more
+                                            && -self.content-y + self.height >= self.content-height - 140px)
+                                        {
+                                            root.load-more-triggered();
+                                        }
+                                    }
+
+                                    for item[idx] in root.results: Rectangle {
+                                        height: 64px;
+                                        background: item.project-id == root.selected-project-id
+                                            ? Theme.accent-muted
+                                            : mod-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                        mod-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                mod-list-scope.focus();
+                                                mod-list-scope.selected-idx = idx;
+                                                root.selected-project-id = item.project-id;
+                                                root.mod-selected(item.project-id);
+                                            }
+                                        }
+
+                                        HorizontalLayout {
+                                            padding-left: Theme.space-sm;
+                                            padding-right: Theme.space-sm;
+                                            spacing: Theme.space-sm;
+
+                                            // Coluna fixa de checkbox (alinhamento idêntico em todas as linhas)
+                                            VerticalLayout {
+                                                width: 22px;
+                                                horizontal-stretch: 0;
+                                                alignment: center;
+                                                CrabCheckbox {
+                                                    width: 20px;
+                                                    label: "";
+                                                    checked: item.selected-for-download;
+                                                    toggled => {
+                                                        mod-list-scope.focus();
+                                                        mod-list-scope.selected-idx = idx;
+                                                        root.selected-project-id = item.project-id;
+                                                        root.toggle-queue-clicked(item.project-id);
+                                                    }
+                                                }
+                                            }
+
+                                            // Coluna fixa de ícone real (44x44)
+                                            VerticalLayout {
+                                                width: 44px;
+                                                horizontal-stretch: 0;
+                                                alignment: center;
+                                                Rectangle {
+                                                    width: 44px;
+                                                    height: 44px;
+                                                    border-radius: Theme.radius-sm;
+                                                    background: Theme.bg-primary;
+                                                    clip: true;
+
+                                                    if item.has-icon: Image {
+                                                        width: 44px;
+                                                        height: 44px;
+                                                        source: item.icon;
+                                                        image-fit: cover;
+                                                    }
+                                                    if !item.has-icon: Image {
+                                                        x: 10px;
+                                                        y: 10px;
+                                                        width: 24px;
+                                                        height: 24px;
+                                                        source: @image-url("../../assets/icons/puzzle.svg");
+                                                        colorize: Theme.text-secondary;
+                                                    }
+                                                }
+                                            }
+
+                                            // Coluna flexível de título + descrição
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                min-width: 0px;
+                                                alignment: center;
+                                                spacing: 2px;
+
+                                                Text {
+                                                    text: item.installed ? item.title + " [installed]" : item.title;
+                                                    font-size: Theme.font-sm;
+                                                    font-weight: 600;
+                                                    color: item.project-id == root.selected-project-id
+                                                        ? Theme.accent
+                                                        : item.installed ? Theme.text-secondary : Theme.text-primary;
+                                                    overflow: elide;
+                                                }
+
+                                                Text {
+                                                    text: item.description;
+                                                    font-size: Theme.font-xs;
+                                                    color: Theme.text-secondary;
+                                                    overflow: elide;
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            y: parent.height - 1px;
+                                            height: 1px;
+                                            width: parent.width;
+                                            background: Theme.border-subtle;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Ordenação posicionada abaixo da lista de mods (referência Prism)
+                        HorizontalLayout {
+                            alignment: start;
+                            CrabDropdown {
+                                width: 210px;
+                                open-upward: true;
+                                options: [
+                                    { id: "relevance", label: "Sort by Relevance", detail: "", enabled: true, has-icon: false },
+                                    { id: "downloads", label: "Sort by Downloads", detail: "", enabled: true, has-icon: false },
+                                    { id: "updated", label: "Sort by Updated", detail: "", enabled: true, has-icon: false },
+                                    { id: "newest", label: "Sort by Newest", detail: "", enabled: true, has-icon: false },
+                                ];
+                                selected-id <=> root.sort-id;
+                                selected-label: root.sort-label;
+                                selected(s) => { root.sort-changed(s); }
+                            }
+                        }
+                    }
+
+                    // Painel Direito: Descrição completa em Markdown + Links + Seletor de versão abaixo
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            if root.selected-project-id == "": Text {
+                                text: "Select a mod to view its description, links and versions.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+
+                            if root.selected-project-id != "": Flickable {
+                                width: parent.width;
+                                height: parent.height;
+                                content-width: self.width;
+                                content-height: detail-col.preferred-height + 24px;
+
+                                detail-col := VerticalLayout {
+                                    width: parent.width;
+                                    padding: Theme.space-md;
+                                    spacing: Theme.space-sm;
+                                    alignment: start;
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-sm;
+                                        Text {
+                                            text: root.detail-title;
+                                            font-size: Theme.font-lg;
+                                            font-weight: 700;
+                                            color: Theme.accent;
+                                            horizontal-stretch: 1;
+                                            wrap: word-wrap;
+                                        }
+                                        if root.detail-homepage != "": CrabButton {
+                                            text: "Homepage";
+                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            has-icon: true;
+                                            variant: "ghost";
+                                            clicked => { root.open-homepage-clicked(root.detail-homepage); }
+                                        }
+                                    }
+
+                                    if root.detail-author != "": Text {
+                                        text: "by " + root.detail-author;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                    }
+
+                                    // Links externos clicáveis (Issues, Source, Discord, Wiki)
+                                    if root.detail-issues-url != "" || root.detail-source-url != "" || root.detail-discord-url != "" || root.detail-wiki-url != "": HorizontalLayout {
+                                        spacing: Theme.space-xs;
+                                        alignment: start;
+
+                                        if root.detail-issues-url != "": CrabButton {
+                                            text: "Issues";
+                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-homepage-clicked(root.detail-issues-url); }
+                                        }
+                                        if root.detail-source-url != "": CrabButton {
+                                            text: "Source";
+                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-homepage-clicked(root.detail-source-url); }
+                                        }
+                                        if root.detail-discord-url != "": CrabButton {
+                                            text: "Discord";
+                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-homepage-clicked(root.detail-discord-url); }
+                                        }
+                                        if root.detail-wiki-url != "": CrabButton {
+                                            text: "Wiki";
+                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-homepage-clicked(root.detail-wiki-url); }
+                                        }
+                                    }
+
+                                    Rectangle { height: 1px; background: Theme.border; }
+
+                                    // Renderização rica estruturada (Markdown + HTML sanitizado + links clicáveis + imagens/banners)
+                                    if root.detail-blocks.length == 0: Text {
+                                        text: root.detail-body != "" ? root.detail-body : root.detail-description;
+                                        font-size: Theme.font-sm;
+                                        color: Theme.text-primary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    for blk in root.detail-blocks: VerticalLayout {
+                                        spacing: 2px;
+
+                                        if blk.kind == "heading": Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-lg;
+                                            font-weight: 700;
+                                            color: Theme.text-primary;
+                                            wrap: word-wrap;
+                                        }
+
+                                        if blk.kind == "subheading": Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: Theme.text-primary;
+                                            wrap: word-wrap;
+                                        }
+
+                                        if blk.kind == "paragraph": Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-sm;
+                                            color: Theme.text-primary;
+                                            wrap: word-wrap;
+                                        }
+
+                                        if blk.kind == "bullet": HorizontalLayout {
+                                            spacing: 6px;
+                                            Text { text: "•"; font-size: Theme.font-sm; color: Theme.accent; }
+                                            Text {
+                                                text: blk.text;
+                                                font-size: Theme.font-sm;
+                                                color: Theme.text-primary;
+                                                horizontal-stretch: 1;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+
+                                        if blk.kind == "link": HorizontalLayout {
+                                            alignment: start;
+                                            CrabButton {
+                                                text: blk.text;
+                                                icon: @image-url("../../assets/icons/external-link.svg");
+                                                has-icon: true;
+                                                variant: "ghost";
+                                                clicked => { root.open-homepage-clicked(blk.url); }
+                                            }
+                                        }
+
+                                        if blk.kind == "image" && blk.has-image: Rectangle {
+                                            height: 96px;
+                                            border-radius: Theme.radius-sm;
+                                            background: transparent;
+                                            clip: true;
+
+                                            Image {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                source: blk.image;
+                                                image-fit: contain;
+                                            }
+
+                                            if blk.url != "": TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => { root.open-homepage-clicked(blk.url); }
+                                            }
+                                        }
+
+                                        if blk.kind == "separator": Rectangle {
+                                            height: 1px;
+                                            background: Theme.border;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Seletor de versão + botão Select mod for download abaixo do painel de detalhes (referência Prism)
+                        HorizontalLayout {
+                            spacing: Theme.space-sm;
+
+                            Text {
+                                text: "Version selected:";
+                                font-size: Theme.font-xs;
+                                color: Theme.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            CrabDropdown {
+                                horizontal-stretch: 1;
+                                open-upward: true;
+                                options: root.version-options;
+                                selected-id <=> root.selected-version-id;
+                                selected-label: root.selected-version-label;
+                                enabled: root.version-options.length > 0;
+                                selected(v) => { root.version-selected(v); }
+                            }
+                        }
+
+                        CrabButton {
+                            text: root.detail-queued ? "Remove mod from download" : "Select mod for download";
+                            icon: root.detail-queued
+                                ? @image-url("../../assets/icons/check.svg")
+                                : @image-url("../../assets/icons/plus.svg");
+                            has-icon: true;
+                            variant: root.detail-queued ? "secondary" : "primary";
+                            enabled: root.selected-project-id != "" && root.version-options.length > 0 && !root.is-downloading;
+                            clicked => { root.toggle-queue-clicked(root.selected-project-id); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Footer: Status + Cancel + Review and confirm
+        Rectangle {
+            height: 46px;
+            background: Theme.bg-secondary;
+
+            Rectangle {
+                y: 0px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.space-md;
+                padding-right: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: root.status-message != ""
+                        ? root.status-message
+                        : (root.queued-count > 0
+                            ? root.queued-count + " selected for download"
+                            : "");
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                CrabButton {
+                    text: "Cancel";
+                    icon: @image-url("../../assets/icons/x.svg");
+                    has-icon: true;
+                    variant: "secondary";
+                    enabled: !root.is-downloading;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.close-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Review and confirm (" + root.queued-count + ")";
+                    icon: @image-url("../../assets/icons/check.svg");
+                    has-icon: true;
+                    variant: "primary";
+                    enabled: root.queued-count > 0 && !root.is-downloading;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.review-clicked(); }
+                }
+            }
+        }
+    }
+
+}

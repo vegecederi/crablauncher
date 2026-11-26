@@ -1,0 +1,155 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { JavaRuntimeItem } from "settings-window.slint";
+
+/// Janela independente "Select Java Runtime" reutilizada em Settings e Edit Instance.
+export component SelectJavaWindow inherits Window {
+    title: "Select Java Runtime — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 680px;
+    preferred-height: 440px;
+    min-width: 560px;
+    min-height: 360px;
+    background: Theme.bg-primary;
+
+    in property <[JavaRuntimeItem]> runtimes: [];
+    in-out property <string> selected-path: "";
+    in-out property <string> search-query: "";
+    in property <bool> is-scanning: false;
+
+    callback search-changed(string);
+    callback refresh-clicked();
+    callback select-clicked(string);
+    callback cancel-clicked();
+
+    VerticalLayout {
+        padding: Theme.space-lg;
+        spacing: Theme.space-md;
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            CrabTextInput {
+                horizontal-stretch: 1;
+                text <=> root.search-query;
+                placeholder: "Search detected Java runtimes...";
+                leading-icon: @image-url("../../assets/icons/search.svg");
+                has-leading-icon: true;
+                edited(q) => { root.search-changed(q); }
+            }
+
+            CrabButton {
+                text: "Refresh";
+                icon: @image-url("../../assets/icons/refresh.svg");
+                has-icon: true;
+                variant: "secondary";
+                enabled: !root.is-scanning;
+                clicked => { root.refresh-clicked(); }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-secondary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            if root.is-scanning: Text {
+                text: "Scanning system and Crab-managed Java runtimes...";
+                font-size: Theme.font-md;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if !root.is-scanning && root.runtimes.length == 0: Text {
+                text: "No Java runtimes found. Use Install Java to download one.";
+                font-size: Theme.font-sm;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if !root.is-scanning && root.runtimes.length > 0: ListView {
+                width: parent.width;
+                height: parent.height;
+
+                for rt in root.runtimes: Rectangle {
+                    height: 36px;
+                    background: rt.path == root.selected-path
+                        ? Theme.accent-muted
+                        : rt-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                    rt-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.selected-path = rt.path; }
+                        double-clicked => {
+                            root.selected-path = rt.path;
+                            root.select-clicked(rt.path);
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-md;
+                        padding-right: Theme.space-md;
+                        spacing: Theme.space-sm;
+
+                        Text {
+                            text: rt.label;
+                            font-size: Theme.font-sm;
+                            font-weight: rt.path == root.selected-path ? 600 : 400;
+                            color: rt.path == root.selected-path ? Theme.accent : Theme.text-primary;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: rt.path;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                            width: 220px;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        width: parent.width;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Select";
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.selected-path != "";
+                clicked => { root.select-clicked(root.selected-path); }
+            }
+        }
+    }
+}

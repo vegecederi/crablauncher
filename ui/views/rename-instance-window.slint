@@ -1,0 +1,79 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabTextInput } from "../components/input.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela nativa dedicada para renomear instâncias (acionada via F2 ou menu de contexto).
+export component RenameInstanceWindow inherits Window {
+    title: "Rename Instance — Crab";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 380px;
+    preferred-height: 162px;
+    min-width: 340px;
+    min-height: 156px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> instance-id: "";
+    in-out property <string> name-input: "";
+    in property <string> error-message: "";
+
+    callback confirm-rename(string, string); // (instance_id, new_name)
+    callback cancel-clicked();
+
+    public function focus-name() {
+        name-field.focus-and-select-all();
+    }
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Rename Instance";
+        subtitle: "Enter a new display name for this instance.";
+        escape-pressed => { root.cancel-clicked(); }
+
+        name-field := CrabTextInput {
+            text <=> root.name-input;
+            placeholder: "Instance name...";
+            accepted => {
+                if (root.name-input != "") {
+                    root.confirm-rename(root.instance-id, root.name-input);
+                }
+            }
+        }
+
+        if root.error-message != "": Text {
+            text: root.error-message;
+            font-size: Theme.font-xs;
+            color: Theme.error-text;
+            overflow: elide;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                icon: @image-url("../../assets/icons/x.svg");
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Rename";
+                icon: @image-url("../../assets/icons/check.svg");
+                has-icon: true;
+                variant: "primary";
+                enabled: root.name-input != "";
+                clicked => { root.confirm-rename(root.instance-id, root.name-input); }
+            }
+        }
+    }
+}

@@ -1,0 +1,84 @@
+import { Theme } from "../theme.slint";
+
+export component CrabTextInput inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> enabled: true;
+    in property <image> leading-icon;
+    in property <bool> has-leading-icon: false;
+    out property <bool> input-focused: input.has-focus;
+
+    callback edited(string);
+    callback accepted(string);
+
+    public function focus-input() {
+        input.focus();
+    }
+
+    public function focus-and-select-all() {
+        input.focus();
+        input.select-all();
+    }
+
+    height: 32px;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    background: root.enabled ? Theme.bg-primary : Theme.bg-secondary;
+    border-color: !root.enabled
+        ? Theme.border-subtle
+        : input.has-focus
+            ? Theme.accent
+            : Theme.border;
+
+    HorizontalLayout {
+        padding-left: Theme.space-sm;
+        padding-right: Theme.space-sm;
+        spacing: Theme.space-sm;
+
+        if root.has-leading-icon: VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: root.leading-icon;
+                width: 14px;
+                height: 14px;
+                colorize: Theme.text-secondary;
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            clip: true;
+
+            if root.text == "" && root.placeholder != "": Text {
+                text: root.placeholder;
+                color: Theme.text-secondary;
+                font-size: Theme.font-md;
+                vertical-alignment: center;
+                x: 0px;
+                height: parent.height;
+            }
+
+            input := TextInput {
+                width: parent.width;
+                height: parent.height;
+                text <=> root.text;
+                enabled: root.enabled;
+                color: root.enabled ? Theme.text-primary : Theme.text-disabled;
+                font-size: Theme.font-md;
+                vertical-alignment: center;
+                selection-background-color: Theme.accent;
+                selection-foreground-color: Theme.text-on-accent;
+                single-line: true;
+
+                edited => {
+                    root.edited(self.text);
+                }
+
+                accepted => {
+                    root.accepted(self.text);
+                }
+            }
+        }
+    }
+}

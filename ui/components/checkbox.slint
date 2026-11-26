@@ -1,0 +1,74 @@
+import { Theme } from "../theme.slint";
+
+export component CrabCheckbox inherits Rectangle {
+    in-out property <bool> checked: false;
+    in property <string> label;
+    in property <bool> enabled: true;
+
+    callback toggled(bool);
+
+    height: root.label == "" ? 16px : 28px;
+    width: root.label == "" ? 16px : self.preferred-width;
+    border-radius: Theme.radius-sm;
+    background: root.label == ""
+        ? transparent
+        : (touch.has-hover && root.enabled ? Theme.bg-interactive : transparent);
+
+    focus-scope := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: root.label == "" ? 0px : Theme.space-xs;
+        padding-right: root.label == "" ? 0px : Theme.space-sm;
+        spacing: root.label == "" ? 0px : Theme.space-sm;
+        alignment: start;
+
+        Rectangle {
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 3px;
+            border-width: 1px;
+            background: root.checked ? Theme.accent : Theme.bg-primary;
+            border-color: focus-scope.has-focus
+                ? Theme.accent
+                : root.checked
+                    ? Theme.accent
+                    : Theme.border;
+
+            if root.checked: Text {
+                text: "✓";
+                color: Theme.text-on-accent;
+                font-size: 11px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.label;
+            font-size: Theme.font-md;
+            color: root.enabled ? Theme.text-primary : Theme.text-disabled;
+            vertical-alignment: center;
+        }
+    }
+}
