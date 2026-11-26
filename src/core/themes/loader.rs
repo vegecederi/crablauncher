@@ -26,6 +26,10 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         include_str!("../../../assets/themes/deep-dark/theme.toml"),
     ),
     (
+        "amoled",
+        include_str!("../../../assets/themes/amoled/theme.toml"),
+    ),
+    (
         "vice",
         include_str!("../../../assets/themes/vice/theme.toml"),
     ),
@@ -113,7 +117,14 @@ pub fn discover_and_load_themes(user_themes_dir: &Path) -> Vec<ResolvedTheme> {
     }
 
     // Ordena: oficiais primeiro (na ordem padrão), depois personalizados por nome.
-    let order = ["crab-light", "crab-dark", "nord", "legacy", "deep-dark"];
+    let order = [
+        "crab-light",
+        "crab-dark",
+        "amoled",
+        "nord",
+        "legacy",
+        "deep-dark",
+    ];
     resolved.sort_by(|a, b| {
         let pos_a = order.iter().position(|&x| x == a.id).unwrap_or(99);
         let pos_b = order.iter().position(|&x| x == b.id).unwrap_or(99);

@@ -5,16 +5,18 @@
 <h3>A fast, minimalist, native Minecraft launcher built with Rust and Slint.</h3>
 
 <p>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021-orange?logo=rust&logoColor=white" alt="Rust" /></a>
-  <a href="https://slint.dev/"><img src="https://img.shields.io/badge/UI-Slint%201.19-2379F4" alt="Slint" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License: GPL-3.0" /></a>
-  <img src="https://img.shields.io/badge/Platform-Linux-lightgrey?logo=linux&logoColor=white" alt="Platform: Linux" />
-  <a href="https://github.com/vegecederi/crablauncher/stargazers"><img src="https://img.shields.io/github/stars/vegecederi/crablauncher?style=flat" alt="GitHub Stars" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021-orange?style=flat&logo=rust&logoColor=white" alt="Rust" /></a>
+  <a href="https://slint.dev/"><img src="https://img.shields.io/badge/Slint-1.19-2379F4?style=flat" alt="Slint" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat" alt="License: GPL-3.0" /></a>
+  <img src="https://img.shields.io/badge/Platform-Linux-lightgrey?style=flat&logo=linux&logoColor=white" alt="Platform: Linux" />
+  <a href="https://github.com/vegecederi/crablauncher/stargazers"><img src="https://img.shields.io/github/stars/vegecederi/crablauncher?style=flat&label=Stars" alt="GitHub Stars" /></a>
 </p>
 
 </div>
 
 ---
+
+Crab Launcher is an independent reimplementation of Prism Launcher, rebuilt from the ground up with Rust and Slint, focusing on performance, flexibility, and a modern native user interface.
 
 ## Features
 

@@ -1,0 +1,33 @@
+schema_version = 1
+
+[metadata]
+id = "amoled"
+name = "AMOLED"
+author = "Crab Team"
+version = "1.0.0"
+description = "Pure black theme designed for AMOLED and OLED displays, featuring minimal surfaces and Crab's signature orange accent."
+base = "crab-dark"
+
+[colors]
+background = "#000000"
+surface = "#0a0a0a"
+surface_elevated = "#121212"
+border = "#1f1f1f"
+border_subtle = "#141414"
+accent = "#ff751f"
+accent_hover = "#ff893f"
+accent_pressed = "#e06214"
+accent_muted = "#ff751f26"
+accent_foreground = "#ffffff"
+text_primary = "#f5f5f5"
+text_secondary = "#a3a3a3"
+text_disabled = "#525252"
+hover = "#171717"
+pressed = "#0d0d0d"
+danger = "#e5484d"
+success = "#3dd68c"
+warning = "#f0b429"
+console_bg = "#000000"
+
+[geometry]
+border_radius = 4
