@@ -22,8 +22,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"
-slint = "1.19"
+slint = { version = "1.19", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "compat-1-2"] }
 tar = "0.4"
+tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "time", "process"] }
 tokio-util = "0.7"
@@ -35,9 +36,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 slint-build = "1.19"
-
-[dev-dependencies]
-tempfile = "3"
 
 [profile.dev]
 opt-level = 1

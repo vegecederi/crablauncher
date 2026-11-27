@@ -1,9 +1,0 @@
-schema_version = 1
-id = "parallel-gc"
-name = "Parallel GC"
-description = "Throughput-oriented Parallel Garbage Collector. May produce longer GC pauses than G1GC or ZGC."
-args = ["-XX:+UseParallelGC"]
-min_java_major = 8
-supported_arches = []
-source = "Crab Official"
-version = "1.0.0"

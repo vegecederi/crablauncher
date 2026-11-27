@@ -1,9 +1,0 @@
-schema_version = 1
-id = "zgc"
-name = "ZGC"
-description = "Low-latency Z Garbage Collector using standard OpenJDK flags. Requires modern 64-bit Java 17 or newer."
-args = ["-XX:+UseZGC"]
-min_java_major = 17
-supported_arches = ["x86_64", "amd64", "aarch64", "arm64"]
-source = "Crab Official"
-version = "1.0.0"
