@@ -14,7 +14,7 @@ export struct ReviewItemEntry {
 
 /// Janela nativa de revisão e confirmação de conteúdos selecionados para download.
 export component ReviewModsWindow inherits Window {
-    title: "Review & Confirm — Crab";
+    title: "Review & Confirm — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 520px;
@@ -67,7 +67,7 @@ export component ReviewModsWindow inherits Window {
                                     ? @image-url("../../assets/providers/modrinth.svg")
                                     : item.provider == "CurseForge"
                                         ? @image-url("../../assets/providers/curseforge.svg")
-                                        : @image-url("../../assets/icons/puzzle.svg");
+                                        : Theme.icon-puzzle;
                                 width: 24px;
                                 height: 24px;
                                 image-fit: contain;
@@ -139,7 +139,7 @@ export component ReviewModsWindow inherits Window {
 
             CrabButton {
                 text: "Cancel";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancelled(); }
@@ -147,7 +147,7 @@ export component ReviewModsWindow inherits Window {
 
             CrabButton {
                 text: "Confirm & Download";
-                icon: @image-url("../../assets/icons/download.svg");
+                icon: Theme.icon-download;
                 has-icon: true;
                 variant: "primary";
                 enabled: !root.is-installing && root.review-items.length > 0;

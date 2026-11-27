@@ -11,12 +11,20 @@ export component CrabButton inherits Rectangle {
     in property <bool> full-width: false;
     in property <bool> align-left: false;
     in property <length> icon-size: 16px;
+    in property <string> tooltip: "";
+    in property <string> tooltip-align: "center"; // "start" | "center" | "end"
+    in property <bool> tooltip-above: false;
     out property <bool> hovered: touch.has-hover;
+
+    private property <bool> tip-shown: false;
+    private property <length> tip-x: 0px;
+    private property <length> tip-y: 0px;
 
     callback clicked();
     callback right-clicked(length, length);
 
     height: Theme.button-height;
+    horizontal-stretch: root.full-width ? 1 : 0;
     border-radius: Theme.radius-sm;
     border-width: (root.is-ghost || root.is-flat-danger) ? 0px : 1px;
 
@@ -62,14 +70,49 @@ export component CrabButton inherits Rectangle {
         }
     }
 
+    tip-timer := Timer {
+        interval: 1000ms;
+        running: touch.has-hover && !touch.pressed && root.tooltip != "" && !root.tip-shown;
+        triggered => {
+            root.tip-x = touch.mouse-x;
+            root.tip-y = touch.mouse-y;
+            root.tip-shown = true;
+            tip-popup.show();
+        }
+    }
+
     touch := TouchArea {
         enabled: root.enabled;
         mouse-cursor: root.enabled ? pointer : default;
+        moved => {
+            root.tip-x = self.mouse-x;
+            root.tip-y = self.mouse-y;
+        }
         clicked => {
+            if (root.tip-shown) {
+                root.tip-shown = false;
+                tip-popup.close();
+            }
             root.clicked();
+        }
+        changed has-hover => {
+            if (!self.has-hover && root.tip-shown) {
+                root.tip-shown = false;
+                tip-popup.close();
+            }
+        }
+        changed pressed => {
+            if (self.pressed && root.tip-shown) {
+                root.tip-shown = false;
+                tip-popup.close();
+            }
         }
         pointer-event(ev) => {
             if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                if (root.tip-shown) {
+                    root.tip-shown = false;
+                    tip-popup.close();
+                }
                 root.right-clicked(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
             }
         }
@@ -92,9 +135,11 @@ export component CrabButton inherits Rectangle {
                     ? Theme.text-disabled
                     : root.is-primary
                         ? Theme.text-on-accent
-                        : root.is-flat-danger
-                            ? (touch.has-hover ? Theme.error-text : Theme.icon-secondary)
-                            : Theme.icon-primary;
+                        : root.is-danger
+                            ? #ffffff
+                            : root.is-flat-danger
+                                ? (touch.has-hover ? Theme.error-text : Theme.icon-secondary)
+                                : Theme.icon-primary;
             }
         }
 
@@ -106,9 +151,12 @@ export component CrabButton inherits Rectangle {
                 ? Theme.text-disabled
                 : root.is-primary
                     ? Theme.text-on-accent
-                    : root.is-flat-danger
-                        ? (touch.has-hover ? Theme.error-text : Theme.text-secondary)
-                        : Theme.text-primary;
+                    : root.is-danger
+                        ? #ffffff
+                        : root.is-flat-danger
+                            ? (touch.has-hover ? Theme.error-text : Theme.text-secondary)
+                            : Theme.text-primary;
+            horizontal-stretch: 0;
             vertical-alignment: center;
         }
 
@@ -116,6 +164,39 @@ export component CrabButton inherits Rectangle {
             direction: "down";
             icon-size: 13px;
             icon-color: !root.enabled ? Theme.text-disabled : Theme.text-secondary;
+        }
+    }
+
+    tip-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: root.tooltip-align == "end"
+            ? min(root.tip-x + 12px, root.width - tip-box.preferred-width)
+            : root.tip-x + 12px;
+        y: root.tooltip-above
+            ? root.tip-y - tip-box.preferred-height - 8px
+            : root.tip-y + 18px;
+        width: tip-box.preferred-width;
+        height: tip-box.preferred-height;
+
+        tip-box := Rectangle {
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-secondary;
+            border-width: 1px;
+            border-color: Theme.border;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+
+                Text {
+                    text: root.tooltip;
+                    font-size: 11px;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                }
+            }
         }
     }
 }

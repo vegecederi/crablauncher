@@ -130,8 +130,6 @@ pub struct InstanceOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_default_jvm_args: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub jvm_preset_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jvm_args: Option<String>,
 
     // Game Window
@@ -205,7 +203,6 @@ pub struct EffectiveInstanceSettings {
     pub memory_source: SettingSource,
 
     pub use_default_jvm_args: bool,
-    pub jvm_preset_id: String,
     pub jvm_args: String,
     pub jvm_args_source: SettingSource,
 
@@ -282,32 +279,23 @@ impl EffectiveInstanceSettings {
             )
         };
 
-        let (use_default_jvm_args, jvm_preset_id, jvm_args, jvm_args_source) =
-            if overrides.override_jvm_args {
-                let use_def = overrides.use_default_jvm_args.unwrap_or(false);
-                let preset_id = overrides.jvm_preset_id.clone().unwrap_or_else(|| {
-                    if use_def {
-                        "default".into()
-                    } else {
-                        "custom".into()
-                    }
-                });
-                let args = if use_def {
-                    String::new()
-                } else {
-                    overrides.jvm_args.clone().unwrap_or_default()
-                };
-                (use_def, preset_id, args, SettingSource::InstanceOverride)
+        let (use_default_jvm_args, jvm_args, jvm_args_source) = if overrides.override_jvm_args {
+            let use_def = overrides.use_default_jvm_args.unwrap_or(false);
+            let args = if use_def {
+                String::new()
             } else {
-                let use_def = global.minecraft.use_default_jvm_args;
-                let preset_id = global.minecraft.jvm_preset_id.clone();
-                let args = if use_def {
-                    String::new()
-                } else {
-                    global.minecraft.jvm_args.clone()
-                };
-                (use_def, preset_id, args, SettingSource::Global)
+                overrides.jvm_args.clone().unwrap_or_default()
             };
+            (use_def, args, SettingSource::InstanceOverride)
+        } else {
+            let use_def = global.minecraft.use_default_jvm_args;
+            let args = if use_def {
+                String::new()
+            } else {
+                global.minecraft.jvm_args.clone()
+            };
+            (use_def, args, SettingSource::Global)
+        };
 
         let (window_width, window_height, start_fullscreen, use_custom_resolution, window_source) =
             if overrides.override_window {
@@ -410,7 +398,6 @@ impl EffectiveInstanceSettings {
             max_memory_mb,
             memory_source,
             use_default_jvm_args,
-            jvm_preset_id,
             jvm_args,
             jvm_args_source,
             window_width,
@@ -444,6 +431,20 @@ impl EffectiveInstanceSettings {
     }
 }
 
+/// Metadados de um modpack gerenciado instalado via provedor (ex.: Modrinth).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedModpackInfo {
+    pub provider: String,
+    pub pack_name: String,
+    pub pack_id: String,
+    pub version_id: String,
+    pub version_name: String,
+    #[serde(default)]
+    pub homepage_url: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub managed_files: Vec<String>,
+}
+
 /// Metadados persistidos em `instances/<dir_name>/instance.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceMetadata {
@@ -461,6 +462,8 @@ pub struct InstanceMetadata {
     pub modloader: Option<String>,
     #[serde(default)]
     pub modloader_spec: Option<crate::core::components::model::ModloaderSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modpack: Option<ManagedModpackInfo>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -508,6 +511,7 @@ impl InstanceMetadata {
             version_type,
             modloader: None,
             modloader_spec: None,
+            modpack: None,
             created_at: now,
             updated_at: now,
             last_played: None,

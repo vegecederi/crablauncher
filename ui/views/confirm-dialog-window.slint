@@ -13,7 +13,7 @@ export component ConfirmDialogWindow inherits Window {
     min-height: 164px;
     background: Theme.bg-secondary;
 
-    in-out property <string> window-title: "Confirm — Crab";
+    in-out property <string> window-title: "Confirm — Crab Launcher";
     in-out property <string> heading: "Confirm Action";
     in-out property <string> message: "";
     in-out property <string> confirm-label: "Confirm";
@@ -56,11 +56,12 @@ export component ConfirmDialogWindow inherits Window {
 
             HorizontalLayout {
                 spacing: Theme.space-sm;
-                alignment: end;
+
+                Rectangle { horizontal-stretch: 1; }
 
                 CrabButton {
                     text: "Cancel";
-                    icon: @image-url("../../assets/icons/x.svg");
+                    icon: Theme.icon-x;
                     has-icon: true;
                     variant: "secondary";
                     clicked => { root.cancelled(); }
@@ -69,8 +70,8 @@ export component ConfirmDialogWindow inherits Window {
                 CrabButton {
                     text: root.confirm-label;
                     icon: root.confirm-variant == "danger"
-                        ? @image-url("../../assets/icons/trash.svg")
-                        : @image-url("../../assets/icons/check.svg");
+                        ? Theme.icon-trash
+                        : Theme.icon-check;
                     has-icon: true;
                     variant: root.confirm-variant;
                     clicked => { root.confirmed(); }

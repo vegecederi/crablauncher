@@ -21,6 +21,7 @@ export component InstanceCard inherits Rectangle {
 
     callback clicked();
     callback double-clicked();
+    callback middle-clicked();
     callback right-clicked(length, length);
     callback drag-started(string, length, length);
     callback drag-moved(length, length);
@@ -31,8 +32,8 @@ export component InstanceCard inherits Rectangle {
     private property <length> press-x: 0px;
     private property <length> press-y: 0px;
 
-    width: 104px;
-    height: root.icon-px + 54px;
+    width: 112px;
+    height: root.icon-px + 58px;
     background: transparent;
 
     touch := TouchArea {
@@ -51,6 +52,8 @@ export component InstanceCard inherits Rectangle {
                     self.absolute-position.x + self.mouse-x,
                     self.absolute-position.y + self.mouse-y
                 );
+            } else if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.middle) {
+                root.middle-clicked();
             } else if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
                 root.left-down = true;
                 root.dragging = false;
@@ -106,10 +109,10 @@ export component InstanceCard inherits Rectangle {
                 if !root.has-custom-icon: Image {
                     x: 4px;
                     y: 2px;
-                    source: @image-url("../../assets/icons/cube.svg");
+                    source: Theme.icon-cube;
                     width: root.icon-px;
                     height: root.icon-px;
-                    colorize: Theme.accent;
+                    colorize: root.selected ? Theme.accent-hover : Theme.accent;
                 }
 
                 if root.has-custom-icon: Image {
@@ -119,6 +122,18 @@ export component InstanceCard inherits Rectangle {
                     width: root.icon-px;
                     height: root.icon-px;
                     image-fit: contain;
+                }
+
+                // Tinge suavemente o ícone selecionado para a cor acentual do tema preservando a transparência
+                if root.has-custom-icon && root.selected: Image {
+                    x: 4px;
+                    y: 2px;
+                    source: root.custom-icon;
+                    width: root.icon-px;
+                    height: root.icon-px;
+                    image-fit: contain;
+                    colorize: Theme.accent;
+                    opacity: 0.36;
                 }
 
                 // Indicador compacto próximo ao ícone
@@ -171,8 +186,8 @@ export component InstanceCard inherits Rectangle {
                         horizontal-alignment: center;
                         wrap: word-wrap;
                         overflow: elide;
-                        max-width: root.show-modloader && root.modloader-kind != "" ? 72px : 88px;
-                        max-height: 30px;
+                        width: min(self.preferred-width, root.show-modloader && root.modloader-kind != "" ? 76px : 96px);
+                        max-height: 36px;
                     }
 
                     if root.show-modloader && root.modloader-kind != "": Rectangle {

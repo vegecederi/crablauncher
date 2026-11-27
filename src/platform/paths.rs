@@ -206,11 +206,4 @@ impl AppPaths {
     pub fn logs_dir(&self) -> PathBuf {
         self.data_dir.join("logs")
     }
-
-    pub fn jvm_presets_dir(&self) -> PathBuf {
-        self.data_dir
-            .join("presets")
-            .join("jvm")
-            .join("custom-presets")
-    }
 }

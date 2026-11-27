@@ -1,0 +1,151 @@
+import { Theme } from "../theme.slint";
+
+export struct FloatingMenuEntry {
+    kind: string,     // "header" | "divider" | "item"
+    id: string,
+    text: string,
+    shortcut: string,
+    icon-key: string, // "edit" | "cube" | "play" | "square" | "settings" | "info" | "folder-plus" | "folder" | "copy" | "wrench" | "trash" | "chevron-up" | "chevron-down" | "plus"
+    enabled: bool,
+    danger: bool,
+}
+
+/// Janela flutuante sem borda para menus de contexto que podem renderizar fora dos limites da janela principal.
+export component ContextMenuWindow inherits Window {
+    no-frame: true;
+    always-on-top: true;
+    default-font-family: Theme.font-family;
+    background: Theme.bg-secondary;
+    width: root.menu-width;
+    height: menu-box.preferred-height;
+
+    in property <length> menu-width: 240px;
+    in property <[FloatingMenuEntry]> entries: [];
+
+    callback item-selected(string);
+    callback dismissed();
+
+    menu-box := Rectangle {
+        width: root.menu-width;
+        border-radius: Theme.radius-sm;
+        background: Theme.bg-secondary;
+        border-width: 1px;
+        border-color: Theme.border;
+        clip: true;
+
+        FocusScope {
+            key-pressed(ev) => {
+                if (ev.text == Key.Escape) {
+                    root.dismissed();
+                    return accept;
+                }
+                reject
+            }
+        }
+
+        VerticalLayout {
+            padding: 6px;
+            spacing: 4px;
+
+            for entry in root.entries: Rectangle {
+                height: entry.kind == "header"
+                    ? 24px
+                    : entry.kind == "divider"
+                        ? 6px
+                        : 32px;
+                border-radius: Theme.radius-sm;
+                background: entry.kind != "item" || !entry.enabled
+                    ? transparent
+                    : row-touch.pressed
+                        ? (entry.danger ? Theme.danger-muted : Theme.bg-interactive-pressed)
+                        : row-touch.has-hover
+                            ? (entry.danger ? Theme.danger-muted : Theme.bg-interactive-hover)
+                            : transparent;
+
+                if entry.kind == "header": HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    Text {
+                        text: entry.text;
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+
+                if entry.kind == "divider": Rectangle {
+                    y: 3px;
+                    height: 1px;
+                    width: parent.width;
+                    background: Theme.border-subtle;
+                }
+
+                row-touch := TouchArea {
+                    enabled: entry.kind == "item" && entry.enabled;
+                    mouse-cursor: entry.kind == "item" && entry.enabled ? pointer : default;
+                    clicked => {
+                        root.item-selected(entry.id);
+                    }
+                }
+
+                if entry.kind == "item": HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 10px;
+
+                    if entry.icon-key != "": VerticalLayout {
+                        alignment: center;
+                        Image {
+                            width: 15px;
+                            height: 15px;
+                            source: entry.icon-key == "edit" ? Theme.icon-edit
+                                : entry.icon-key == "cube" ? Theme.icon-cube
+                                : entry.icon-key == "play" ? Theme.icon-play
+                                : entry.icon-key == "square" ? Theme.icon-square
+                                : entry.icon-key == "settings" ? Theme.icon-settings
+                                : entry.icon-key == "info" ? Theme.icon-info
+                                : entry.icon-key == "folder-plus" ? Theme.icon-folder-plus
+                                : entry.icon-key == "folder" ? Theme.icon-folder
+                                : entry.icon-key == "copy" ? Theme.icon-copy
+                                : entry.icon-key == "wrench" ? Theme.icon-wrench
+                                : entry.icon-key == "trash" ? Theme.icon-trash
+                                : entry.icon-key == "chevron-up" ? Theme.icon-chevron-up
+                                : entry.icon-key == "chevron-down" ? Theme.icon-chevron-down
+                                : entry.icon-key == "arrow-up" ? Theme.icon-arrow-up
+                                : entry.icon-key == "arrow-down" ? Theme.icon-arrow-down
+                                : Theme.icon-plus;
+                            colorize: !entry.enabled
+                                ? Theme.text-disabled
+                                : entry.danger
+                                    ? (row-touch.has-hover ? Theme.error-text : Theme.icon-secondary)
+                                    : Theme.icon-primary;
+                        }
+                    }
+
+                    Text {
+                        text: entry.text;
+                        font-size: Theme.font-md;
+                        font-weight: 500;
+                        color: !entry.enabled
+                            ? Theme.text-disabled
+                            : entry.danger
+                                ? (row-touch.has-hover ? Theme.error-text : Theme.text-secondary)
+                                : Theme.text-primary;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    if entry.shortcut != "": Text {
+                        text: entry.shortcut;
+                        font-size: Theme.font-xs;
+                        color: !entry.enabled ? Theme.text-disabled : Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -2,6 +2,7 @@ import { ListView, ScrollView, TextEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { CrabButton } from "../components/button.slint";
 import { CrabTextInput } from "../components/input.slint";
+import { CrabNumberInput } from "../components/number-input.slint";
 import { CrabCheckbox } from "../components/checkbox.slint";
 import { CrabRadioButton } from "../components/radio.slint";
 import { CrabDropdown, DropdownOption } from "../components/dropdown.slint";
@@ -42,7 +43,7 @@ export struct IconPackItem {
 }
 
 export component SettingsWindow inherits Window {
-    title: "Settings — Crab";
+    title: "Settings — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 820px;
@@ -52,7 +53,8 @@ export component SettingsWindow inherits Window {
     background: Theme.bg-primary;
 
     in-out property <int> active-tab: 0; // 0=General, 1=Java, 2=Minecraft, 3=Downloads, 4=About, 5=Appearance
-    in-out property <int> mc-subtab: 0; // 0=General, 1=Java, 2=Console, 3=Tweaks
+    in-out property <int> mc-subtab: 0; // 0=General, 2=Console, 3=Tweaks
+    in-out property <bool> has-unsaved-changes: false;
     in-out property <int> appearance-subtab: 0; // 0=Themes, 1=Instance Grid
 
     // General & Language
@@ -131,11 +133,6 @@ export component SettingsWindow inherits Window {
     in property <string> memory-warning: "";
     in-out property <bool> warn-insufficient-memory: true;
     in-out property <bool> use-default-jvm-args: true;
-    in property <[DropdownOption]> jvm-preset-options: [];
-    in-out property <string> jvm-preset-id: "default";
-    in-out property <string> jvm-preset-label: "Launcher Default";
-    in property <string> jvm-preset-description: "";
-    in property <string> jvm-preset-compat: "";
     in-out property <string> jvm-args: "";
     in property <string> jvm-conflict-warning: "";
     in property <string> jvm-test-result: "";
@@ -230,10 +227,7 @@ export component SettingsWindow inherits Window {
     callback resolution-fields-edited();
     callback memory-preset-selected(string);
     callback memory-fields-edited();
-    callback jvm-preset-selected(string);
     callback jvm-args-edited();
-    callback manage-jvm-presets-clicked();
-    callback save-as-jvm-preset-clicked(string);
     callback test-jvm-args-clicked(string, string, string, string);
     callback copy-jvm-args-clicked(string);
     callback open-logs-folder-clicked();
@@ -248,10 +242,15 @@ export component SettingsWindow inherits Window {
     callback apply-clicked();
     // Icon Packs (Appearance -> Icons)
     in property <[IconPackItem]> icon-packs: [];
+    in property <[image]> icon-pack-preview-images: [];
     in-out property <string> active-icon-pack-id: "lucide";
+    in-out property <bool> disable-special-effects: false;
+    in-out property <string> wallpaper-opacity-text: "100";
     private property <string> hovered-icon-pack-id: "";
     private property <string> preview-pack-id: root.hovered-icon-pack-id != "" ? root.hovered-icon-pack-id : root.active-icon-pack-id;
+    callback visual-effects-changed(bool, string);
     callback icon-pack-selected(string);
+    callback icon-pack-preview-requested(string);
     callback import-icon-pack-clicked();
     callback open-icon-packs-folder-clicked();
     callback refresh-icon-packs-clicked();
@@ -273,6 +272,7 @@ export component SettingsWindow inherits Window {
     callback no-default-account-clicked();
 
     callback save-clicked();
+    callback ok-clicked();
     callback browse-folder-clicked(string);
     callback reset-folder-paths-clicked();
     callback close-clicked();
@@ -293,48 +293,78 @@ export component SettingsWindow inherits Window {
                     background: Theme.border;
                 }
 
+                // Atalho de scroll do mouse na barra lateral para alternar abas
+                TouchArea {
+                    scroll-event(ev) => {
+                        if (ev.delta-y > 0px) {
+                            root.active-tab =
+                                root.active-tab == 0 ? 0
+                                : root.active-tab == 5 ? 0
+                                : root.active-tab == 1 ? 5
+                                : root.active-tab == 2 ? 1
+                                : root.active-tab == 3 ? 2
+                                : root.active-tab == 6 ? 3
+                                : 6;
+                            if (root.active-tab == 6) { root.refresh-accounts-clicked(); }
+                            return accept;
+                        } else if (ev.delta-y < 0px) {
+                            root.active-tab =
+                                root.active-tab == 0 ? 5
+                                : root.active-tab == 5 ? 1
+                                : root.active-tab == 1 ? 2
+                                : root.active-tab == 2 ? 3
+                                : root.active-tab == 3 ? 6
+                                : root.active-tab == 6 ? 4
+                                : 4;
+                            if (root.active-tab == 6) { root.refresh-accounts-clicked(); }
+                            return accept;
+                        }
+                        reject
+                    }
+                }
+
                 VerticalLayout {
                     padding: Theme.space-sm;
                     spacing: Theme.space-xs;
 
                     NavigationItem {
                         label: "General";
-                        icon: @image-url("../../assets/icons/settings.svg");
+                        icon: Theme.icon-settings;
                         selected: root.active-tab == 0;
                         clicked => { root.active-tab = 0; }
                     }
 
                     NavigationItem {
                         label: "Appearance";
-                        icon: @image-url("../../assets/icons/layers.svg");
+                        icon: Theme.icon-layers;
                         selected: root.active-tab == 5;
                         clicked => { root.active-tab = 5; }
                     }
 
                     NavigationItem {
                         label: "Java";
-                        icon: @image-url("../../assets/icons/coffee.svg");
+                        icon: Theme.icon-coffee;
                         selected: root.active-tab == 1;
                         clicked => { root.active-tab = 1; }
                     }
 
                     NavigationItem {
                         label: "Minecraft";
-                        icon: @image-url("../../assets/icons/cube.svg");
+                        icon: Theme.icon-cube;
                         selected: root.active-tab == 2;
                         clicked => { root.active-tab = 2; }
                     }
 
                     NavigationItem {
                         label: "Downloads";
-                        icon: @image-url("../../assets/icons/download.svg");
+                        icon: Theme.icon-download;
                         selected: root.active-tab == 3;
                         clicked => { root.active-tab = 3; }
                     }
 
                     NavigationItem {
                         label: "Accounts";
-                        icon: @image-url("../../assets/icons/user.svg");
+                        icon: Theme.icon-user;
                         selected: root.active-tab == 6;
                         clicked => {
                             root.active-tab = 6;
@@ -344,7 +374,7 @@ export component SettingsWindow inherits Window {
 
                     NavigationItem {
                         label: "About";
-                        icon: @image-url("../../assets/icons/info.svg");
+                        icon: Theme.icon-info;
                         selected: root.active-tab == 4;
                         clicked => { root.active-tab = 4; }
                     }
@@ -384,7 +414,10 @@ export component SettingsWindow inherits Window {
                                 options: root.language-options;
                                 selected-id <=> root.language;
                                 selected-label: root.language-label;
-                                selected(id) => { root.language-selected(id); }
+                                selected(id) => {
+                                    root.has-unsaved-changes = true;
+                                    root.language-selected(id);
+                                }
                             }
                         }
 
@@ -393,19 +426,19 @@ export component SettingsWindow inherits Window {
                             CrabCheckbox {
                                 label: "Confirm before deleting an instance";
                                 checked <=> root.confirm-instance-delete;
-                                toggled => { root.save-clicked(); }
+                                toggled => { root.has-unsaved-changes = true; }
                             }
 
                             CrabCheckbox {
                                 label: "Confirm before deleting a group";
                                 checked <=> root.confirm-group-delete;
-                                toggled => { root.save-clicked(); }
+                                toggled => { root.has-unsaved-changes = true; }
                             }
 
                             CrabCheckbox {
                                 label: "Launch instance on double-click";
                                 checked <=> root.launch-on-double-click;
-                                toggled => { root.save-clicked(); }
+                                toggled => { root.has-unsaved-changes = true; }
                             }
                         }
 
@@ -414,17 +447,17 @@ export component SettingsWindow inherits Window {
                             CrabRadioButton {
                                 label: "Ask what to do";
                                 selected: root.rename-folder-policy == 0;
-                                clicked => { root.rename-folder-policy = 0; root.save-clicked(); }
+                                clicked => { root.rename-folder-policy = 0; root.has-unsaved-changes = true; }
                             }
                             CrabRadioButton {
                                 label: "Always rename the folder";
                                 selected: root.rename-folder-policy == 1;
-                                clicked => { root.rename-folder-policy = 1; root.save-clicked(); }
+                                clicked => { root.rename-folder-policy = 1; root.has-unsaved-changes = true; }
                             }
                             CrabRadioButton {
                                 label: "Never rename the folder";
                                 selected: root.rename-folder-policy == 2;
-                                clicked => { root.rename-folder-policy = 2; root.save-clicked(); }
+                                clicked => { root.rename-folder-policy = 2; root.has-unsaved-changes = true; }
                             }
                         }
 
@@ -434,37 +467,37 @@ export component SettingsWindow inherits Window {
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
                                 Text { text: "Instances"; width: 112px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-instances; placeholder: "Default instances directory"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-instances; placeholder: "Default instances directory"; edited => { root.has-unsaved-changes = true; } accepted => { root.has-unsaved-changes = true; } }
                                 CrabButton { text: "Browse"; variant: "secondary"; clicked => { root.browse-folder-clicked("instances"); } }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
                                 Text { text: "Mods"; width: 112px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-mods; placeholder: "Default shared mods directory"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-mods; placeholder: "Default shared mods directory"; edited => { root.has-unsaved-changes = true; } accepted => { root.has-unsaved-changes = true; } }
                                 CrabButton { text: "Browse"; variant: "secondary"; clicked => { root.browse-folder-clicked("mods"); } }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
                                 Text { text: "Icons"; width: 112px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-icons; placeholder: "Default icons directory"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-icons; placeholder: "Default icons directory"; edited => { root.has-unsaved-changes = true; } accepted => { root.has-unsaved-changes = true; } }
                                 CrabButton { text: "Browse"; variant: "secondary"; clicked => { root.browse-folder-clicked("icons"); } }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
                                 Text { text: "Java Runtimes"; width: 112px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-java-runtimes; placeholder: "Default Java runtimes directory"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-java-runtimes; placeholder: "Default Java runtimes directory"; edited => { root.has-unsaved-changes = true; } accepted => { root.has-unsaved-changes = true; } }
                                 CrabButton { text: "Browse"; variant: "secondary"; clicked => { root.browse-folder-clicked("runtimes"); } }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
                                 Text { text: "Skins"; width: 112px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-skins; placeholder: "Default skins directory"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-skins; placeholder: "Default skins directory"; edited => { root.has-unsaved-changes = true; } accepted => { root.has-unsaved-changes = true; } }
                                 CrabButton { text: "Browse"; variant: "secondary"; clicked => { root.browse-folder-clicked("skins"); } }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
                                 Text { text: "Downloads"; width: 112px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-downloads; placeholder: "Default downloads directory"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                CrabTextInput { horizontal-stretch: 1; text <=> root.folder-downloads; placeholder: "Default downloads directory"; edited => { root.has-unsaved-changes = true; } accepted => { root.has-unsaved-changes = true; } }
                                 CrabButton { text: "Browse"; variant: "secondary"; clicked => { root.browse-folder-clicked("downloads"); } }
                             }
                             HorizontalLayout {
@@ -482,15 +515,25 @@ export component SettingsWindow inherits Window {
 
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
-                                Text { text: "Log History Limit"; width: 164px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { width: 120px; text <=> root.console-history-limit; placeholder: "150000"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                alignment: start;
+                                Text { text: "Log History Limit"; width: 196px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
+                                CrabNumberInput {
+                                    width: 136px;
+                                    text <=> root.console-history-limit;
+                                    placeholder: "150000";
+                                    min-value: 100;
+                                    max-value: 1000000;
+                                    step: 1000;
+                                    edited => { root.has-unsaved-changes = true; }
+                                    accepted => { root.has-unsaved-changes = true; }
+                                }
                                 Text { text: "lines"; font-size: Theme.font-xs; color: Theme.text-secondary; vertical-alignment: center; }
                             }
 
                             CrabCheckbox {
                                 label: "Stop logging when log overflows";
                                 checked <=> root.console-stop-on-overflow;
-                                toggled => { root.save-clicked(); }
+                                toggled => { root.has-unsaved-changes = true; }
                             }
                         }
 
@@ -499,42 +542,85 @@ export component SettingsWindow inherits Window {
 
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
-                                Text { text: "Concurrent Task Limit"; width: 184px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { width: 96px; text <=> root.concurrent-task-limit; placeholder: "10"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                alignment: start;
+                                Text { text: "Concurrent Task Limit"; width: 196px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
+                                CrabNumberInput {
+                                    width: 136px;
+                                    text <=> root.concurrent-task-limit;
+                                    placeholder: "10";
+                                    min-value: 1;
+                                    max-value: 32;
+                                    step: 1;
+                                    edited => { root.has-unsaved-changes = true; }
+                                    accepted => { root.has-unsaved-changes = true; }
+                                }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
-                                Text { text: "Concurrent Download Limit"; width: 184px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { width: 96px; text <=> root.concurrent-download-limit; placeholder: "6"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                alignment: start;
+                                Text { text: "Concurrent Download Limit"; width: 196px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
+                                CrabNumberInput {
+                                    width: 136px;
+                                    text <=> root.concurrent-download-limit;
+                                    placeholder: "6";
+                                    min-value: 1;
+                                    max-value: 32;
+                                    step: 1;
+                                    edited => { root.has-unsaved-changes = true; }
+                                    accepted => { root.has-unsaved-changes = true; }
+                                }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
-                                Text { text: "Retry Limit"; width: 184px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { width: 96px; text <=> root.retry-limit; placeholder: "1"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                alignment: start;
+                                Text { text: "Retry Limit"; width: 196px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
+                                CrabNumberInput {
+                                    width: 136px;
+                                    text <=> root.retry-limit;
+                                    placeholder: "1";
+                                    min-value: 0;
+                                    max-value: 10;
+                                    step: 1;
+                                    edited => { root.has-unsaved-changes = true; }
+                                    accepted => { root.has-unsaved-changes = true; }
+                                }
                             }
                             HorizontalLayout {
                                 spacing: Theme.space-sm;
-                                Text { text: "HTTP Timeout"; width: 184px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
-                                CrabTextInput { width: 96px; text <=> root.http-timeout-secs; placeholder: "60"; edited => { root.save-clicked(); } accepted => { root.save-clicked(); } }
+                                alignment: start;
+                                Text { text: "HTTP Timeout"; width: 196px; font-size: Theme.font-sm; color: Theme.text-secondary; vertical-alignment: center; }
+                                CrabNumberInput {
+                                    width: 136px;
+                                    text <=> root.http-timeout-secs;
+                                    placeholder: "60";
+                                    min-value: 5;
+                                    max-value: 600;
+                                    step: 5;
+                                    edited => { root.has-unsaved-changes = true; }
+                                    accepted => { root.has-unsaved-changes = true; }
+                                }
                                 Text { text: "seconds"; font-size: Theme.font-xs; color: Theme.text-secondary; vertical-alignment: center; }
                             }
                         }
                     }
                 }
 
-                // 1: Java (dedicada ao gerenciamento de runtimes instalados e provedores)
-                if root.active-tab == 1: VerticalLayout {
+                // 1: Java (Runtimes + Java Installation + Memory + Java Arguments)
+                if root.active-tab == 1: ScrollView {
                     width: parent.width;
                     height: parent.height;
-                    padding: Theme.space-lg;
-                    spacing: Theme.space-md;
 
-                    Text {
-                        text: "Java Runtimes";
-                        font-size: Theme.font-xl;
-                        font-weight: 600;
-                        color: Theme.text-primary;
-                    }
+                    VerticalLayout {
+                        padding: Theme.space-lg;
+                        spacing: Theme.space-md;
+                        alignment: start;
+
+                        Text {
+                            text: "Java";
+                            font-size: Theme.font-xl;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                        }
 
                     HorizontalLayout {
                         spacing: Theme.space-sm;
@@ -542,7 +628,7 @@ export component SettingsWindow inherits Window {
 
                         CrabButton {
                             text: "Auto-detect";
-                            icon: @image-url("../../assets/icons/scan-search.svg");
+                            icon: Theme.icon-scan-search;
                             has-icon: true;
                             variant: "secondary";
                             enabled: !root.java-busy;
@@ -551,7 +637,7 @@ export component SettingsWindow inherits Window {
 
                         CrabButton {
                             text: "Install Java...";
-                            icon: @image-url("../../assets/icons/download.svg");
+                            icon: Theme.icon-download;
                             has-icon: true;
                             variant: "primary";
                             enabled: !root.java-busy;
@@ -560,7 +646,7 @@ export component SettingsWindow inherits Window {
 
                         CrabButton {
                             text: "Remove Selected Managed";
-                            icon: @image-url("../../assets/icons/trash.svg");
+                            icon: Theme.icon-trash;
                             has-icon: true;
                             variant: "flat-danger";
                             enabled: root.java-manual-path != "" && !root.java-busy;
@@ -595,18 +681,15 @@ export component SettingsWindow inherits Window {
                             ];
                             selected-id <=> root.java-provider-id;
                             selected-label: root.java-provider-label;
-                            selected(id) => { root.java-provider-selected(id); }
+                            selected(id) => {
+                                root.has-unsaved-changes = true;
+                                root.java-provider-selected(id);
+                            }
                         }
                     }
 
-                    CrabCheckbox {
-                        label: "Automatically download required Java when missing";
-                        checked <=> root.java-auto-download;
-                        toggled => { root.save-clicked(); }
-                    }
-
                     Rectangle {
-                        vertical-stretch: 1;
+                        height: 164px;
                         border-radius: Theme.radius-sm;
                         background: Theme.bg-secondary;
                         border-width: 1px;
@@ -663,11 +746,11 @@ export component SettingsWindow inherits Window {
                             horizontal-stretch: 1;
                             text <=> root.java-add-path;
                             placeholder: "Add custom Java executable path...";
-                            edited => { root.save-clicked(); }
+                            edited => { root.has-unsaved-changes = true; }
                         }
                         CrabButton {
                             text: "Add Java";
-                            icon: @image-url("../../assets/icons/plus.svg");
+                            icon: Theme.icon-plus;
                             has-icon: true;
                             variant: "secondary";
                             enabled: root.java-add-path != "" && !root.java-busy;
@@ -683,6 +766,234 @@ export component SettingsWindow inherits Window {
                         font-size: Theme.font-xs;
                         color: Theme.text-secondary;
                         wrap: word-wrap;
+                    }
+
+                    SettingsSection {
+                        title: "Java Installation";
+
+                        CrabCheckbox {
+                            label: "Automatically select compatible Java";
+                            checked <=> root.java-auto-select;
+                            toggled => { root.has-unsaved-changes = true; }
+                        }
+
+                        CrabCheckbox {
+                            label: "Automatically download required Java when missing";
+                            checked <=> root.java-auto-download;
+                            toggled => { root.has-unsaved-changes = true; }
+                        }
+
+                        CrabCheckbox {
+                            label: "Check Java compatibility before launching";
+                            checked <=> root.check-java-compatibility;
+                            toggled => { root.has-unsaved-changes = true; }
+                        }
+
+                        Text {
+                            text: "Selected Runtime: " + root.java-selected-summary;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text { text: "Java Executable Path"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                            CrabTextInput {
+                                text <=> root.java-manual-path;
+                                enabled: !root.java-auto-select;
+                                placeholder: "/usr/lib/jvm/.../bin/java";
+                                edited => { root.has-unsaved-changes = true; }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Theme.space-xs;
+                            alignment: start;
+
+                            CrabButton {
+                                text: "Detect";
+                                icon: Theme.icon-scan-search;
+                                has-icon: true;
+                                variant: "secondary";
+                                clicked => { root.detect-java-selector-clicked(); }
+                            }
+                            CrabButton {
+                                text: "Browse";
+                                icon: Theme.icon-folder;
+                                has-icon: true;
+                                variant: "secondary";
+                                clicked => { root.browse-java-clicked(); }
+                            }
+                            CrabButton {
+                                text: "Test Settings";
+                                icon: Theme.icon-flask-conical;
+                                has-icon: true;
+                                variant: "secondary";
+                                enabled: root.java-manual-path != "" && !root.java-busy;
+                                clicked => { root.test-java-clicked(root.java-manual-path); }
+                            }
+                            CrabButton {
+                                text: "Open Java Downloader";
+                                icon: Theme.icon-download;
+                                has-icon: true;
+                                variant: "secondary";
+                                clicked => { root.open-install-java-clicked(); }
+                            }
+                        }
+                    }
+
+                    SettingsSection {
+                        title: "Memory";
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text { text: "Memory Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                            CrabDropdown {
+                                width: 260px;
+                                options: root.memory-preset-options;
+                                selected-id <=> root.memory-preset-id;
+                                selected-label: root.memory-preset-label;
+                                selected(id) => {
+                                    root.has-unsaved-changes = true;
+                                    root.memory-preset-selected(id);
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Theme.space-lg;
+                            alignment: start;
+
+                            VerticalLayout {
+                                width: 170px;
+                                spacing: 4px;
+                                Text { text: "Minimum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                CrabNumberInput {
+                                    text <=> root.min-memory-mb;
+                                    placeholder: "512";
+                                    min-value: 128;
+                                    max-value: 65536;
+                                    step: 256;
+                                    edited(_) => {
+                                        root.has-unsaved-changes = true;
+                                        root.memory-fields-edited();
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                width: 170px;
+                                spacing: 4px;
+                                Text { text: "Maximum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
+                                CrabNumberInput {
+                                    text <=> root.max-memory-mb;
+                                    placeholder: "2048";
+                                    min-value: 128;
+                                    max-value: 65536;
+                                    step: 256;
+                                    edited(_) => {
+                                        root.has-unsaved-changes = true;
+                                        root.memory-fields-edited();
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "JVM flags: -Xms" + root.min-memory-mb + "M  -Xmx" + root.max-memory-mb + "M";
+                            font-family: Theme.console-font-family;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+
+                        if root.memory-warning != "": Text {
+                            text: root.memory-warning;
+                            font-size: Theme.font-xs;
+                            color: Theme.warning-text;
+                            wrap: word-wrap;
+                        }
+
+                        if root.system-ram-display != "": Text {
+                            text: "Total System Memory: " + root.system-ram-display
+                                + (root.system-avail-ram-display != "" ? "  •  Available: " + root.system-avail-ram-display : "");
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+
+                        CrabCheckbox {
+                            label: "Warn when available memory is insufficient";
+                            checked <=> root.warn-insufficient-memory;
+                            toggled => { root.has-unsaved-changes = true; }
+                        }
+                    }
+
+                    SettingsSection {
+                        title: "Java Arguments";
+
+                        TextEdit {
+                            height: 84px;
+                            text <=> root.jvm-args;
+                            font-size: Theme.font-sm;
+                            edited(_) => {
+                                root.has-unsaved-changes = true;
+                                root.jvm-args-edited();
+                            }
+                        }
+
+                        if root.jvm-conflict-warning != "": Text {
+                            text: root.jvm-conflict-warning;
+                            font-size: Theme.font-xs;
+                            color: Theme.warning-text;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Theme.space-xs;
+                            alignment: start;
+
+                            CrabButton {
+                                text: "Reset to Default";
+                                icon: Theme.icon-refresh;
+                                has-icon: true;
+                                variant: "secondary";
+                                clicked => {
+                                    root.has-unsaved-changes = true;
+                                }
+                            }
+                            CrabButton {
+                                text: "Test Arguments";
+                                icon: Theme.icon-flask-conical;
+                                has-icon: true;
+                                variant: "secondary";
+                                clicked => {
+                                    root.test-jvm-args-clicked(
+                                        root.java-manual-path,
+                                        root.min-memory-mb,
+                                        root.max-memory-mb,
+                                        root.jvm-args
+                                    );
+                                }
+                            }
+                            CrabButton {
+                                text: "Copy Arguments";
+                                icon: Theme.icon-copy;
+                                has-icon: true;
+                                variant: "secondary";
+                                clicked => {
+                                    root.copy-jvm-args-clicked(
+                                        "-Xms" + root.min-memory-mb + "M -Xmx" + root.max-memory-mb + "M " + root.jvm-args
+                                    );
+                                }
+                            }
+                        }
+
+                        if root.jvm-test-result != "": Text {
+                            text: root.jvm-test-result;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                            wrap: word-wrap;
+                        }
+                    }
                     }
                 }
 
@@ -700,37 +1011,48 @@ export component SettingsWindow inherits Window {
                         color: Theme.text-primary;
                     }
 
-                    HorizontalLayout {
-                        spacing: 4px;
-                        alignment: start;
+                    Rectangle {
+                        height: Theme.button-height;
+                        background: transparent;
 
-                        CrabButton {
-                            text: "General";
-                            icon: @image-url("../../assets/icons/settings.svg");
-                            has-icon: true;
-                            variant: root.mc-subtab == 0 ? "primary" : "secondary";
-                            clicked => { root.mc-subtab = 0; }
+                        TouchArea {
+                            scroll-event(ev) => {
+                                if (ev.delta-y > 0px) {
+                                    root.mc-subtab = max(0, root.mc-subtab - 1);
+                                    return accept;
+                                } else if (ev.delta-y < 0px) {
+                                    root.mc-subtab = min(2, root.mc-subtab + 1);
+                                    return accept;
+                                }
+                                reject
+                            }
                         }
-                        CrabButton {
-                            text: "Java";
-                            icon: @image-url("../../assets/icons/coffee.svg");
-                            has-icon: true;
-                            variant: root.mc-subtab == 1 ? "primary" : "secondary";
-                            clicked => { root.mc-subtab = 1; }
-                        }
-                        CrabButton {
-                            text: "Console";
-                            icon: @image-url("../../assets/icons/terminal.svg");
-                            has-icon: true;
-                            variant: root.mc-subtab == 2 ? "primary" : "secondary";
-                            clicked => { root.mc-subtab = 2; }
-                        }
-                        CrabButton {
-                            text: "Tweaks";
-                            icon: @image-url("../../assets/icons/sliders-horizontal.svg");
-                            has-icon: true;
-                            variant: root.mc-subtab == 3 ? "primary" : "secondary";
-                            clicked => { root.mc-subtab = 3; }
+
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+
+                            CrabButton {
+                                text: "General";
+                                icon: Theme.icon-settings;
+                                has-icon: true;
+                                variant: root.mc-subtab == 0 ? "primary" : "secondary";
+                                clicked => { root.mc-subtab = 0; }
+                            }
+                            CrabButton {
+                                text: "Console";
+                                icon: Theme.icon-terminal;
+                                has-icon: true;
+                                variant: root.mc-subtab == 1 ? "primary" : "secondary";
+                                clicked => { root.mc-subtab = 1; }
+                            }
+                            CrabButton {
+                                text: "Tweaks";
+                                icon: Theme.icon-sliders-horizontal;
+                                has-icon: true;
+                                variant: root.mc-subtab == 2 ? "primary" : "secondary";
+                                clicked => { root.mc-subtab = 2; }
+                            }
                         }
                     }
 
@@ -757,14 +1079,14 @@ export component SettingsWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Start Minecraft in Fullscreen";
                                         checked <=> root.start-fullscreen;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     CrabCheckbox {
                                         label: "Use Custom Window Resolution";
                                         checked <=> root.use-custom-resolution;
                                         enabled: !root.start-fullscreen;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     VerticalLayout {
@@ -776,7 +1098,10 @@ export component SettingsWindow inherits Window {
                                             selected-id <=> root.resolution-preset-id;
                                             selected-label: root.resolution-preset-label;
                                             enabled: root.use-custom-resolution && !root.start-fullscreen;
-                                            selected(id) => { root.resolution-preset-selected(id); }
+                                            selected(id) => {
+                                                root.has-unsaved-changes = true;
+                                                root.resolution-preset-selected(id);
+                                            }
                                         }
                                     }
 
@@ -788,22 +1113,28 @@ export component SettingsWindow inherits Window {
                                             width: 150px;
                                             spacing: 4px;
                                             Text { text: "Window Width (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
                                                 text <=> root.window-width;
                                                 enabled: root.use-custom-resolution && !root.start-fullscreen;
                                                 placeholder: "854";
-                                                edited(_) => { root.resolution-fields-edited(); }
+                                                min-value: 320;
+                                                max-value: 7680;
+                                                step: 10;
+                                                edited(_) => { root.has-unsaved-changes = true; root.resolution-fields-edited(); }
                                             }
                                         }
                                         VerticalLayout {
                                             width: 150px;
                                             spacing: 4px;
                                             Text { text: "Window Height (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
                                                 text <=> root.window-height;
                                                 enabled: root.use-custom-resolution && !root.start-fullscreen;
                                                 placeholder: "480";
-                                                edited(_) => { root.resolution-fields-edited(); }
+                                                min-value: 240;
+                                                max-value: 4320;
+                                                step: 10;
+                                                edited(_) => { root.has-unsaved-changes = true; root.resolution-fields-edited(); }
                                             }
                                         }
                                     }
@@ -858,19 +1189,19 @@ export component SettingsWindow inherits Window {
                                         label: "Reopen Launcher After Game Exit";
                                         checked <=> root.reopen-on-exit;
                                         enabled: root.on-launch-behavior != 0;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Reopen Launcher After Game Crash";
                                         checked <=> root.reopen-on-crash;
                                         enabled: root.on-launch-behavior != 0;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Reopen Launcher After Game Is Killed";
                                         checked <=> root.reopen-on-kill;
                                         enabled: root.on-launch-behavior != 0;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                 }
 
@@ -878,31 +1209,20 @@ export component SettingsWindow inherits Window {
                                     title: "Launch Preferences";
 
                                     CrabCheckbox {
-                                        label: "Check Java compatibility before launch";
-                                        checked <=> root.check-java-compatibility;
-                                        toggled => { root.save-clicked(); }
-                                    }
-                                    CrabCheckbox {
-                                        label: "Warn about incompatible Java versions";
-                                        checked <=> root.warn-incompatible-java;
-                                        enabled: root.check-java-compatibility;
-                                        toggled => { root.save-clicked(); }
-                                    }
-                                    CrabCheckbox {
                                         label: "Verify required game files before launch";
                                         checked <=> root.verify-before-launch;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Automatically repair missing game files";
                                         checked <=> root.auto-repair-missing;
                                         enabled: root.verify-before-launch;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Allow multiple different instances to run simultaneously";
                                         checked <=> root.allow-multiple-instances;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     Text {
                                         text: "Running the same instance twice at the same time is always blocked to protect worlds and saves.";
@@ -913,278 +1233,13 @@ export component SettingsWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Confirm before stopping Minecraft";
                                         checked <=> root.confirm-before-stopping;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                 }
                             }
 
-                            // 1: Java (Java Installation + Memory + Java Arguments)
+                            // 1: Console (Behavior + Appearance + Logging)
                             if root.mc-subtab == 1: VerticalLayout {
-                                horizontal-stretch: 1;
-                                max-width: 99999px;
-                                spacing: 12px;
-
-                                SettingsSection {
-                                    title: "Java Installation";
-
-                                    CrabCheckbox {
-                                        label: "Automatically select compatible Java";
-                                        checked <=> root.java-auto-select;
-                                        toggled => { root.save-clicked(); }
-                                    }
-
-                                    CrabCheckbox {
-                                        label: "Automatically download required Java when missing";
-                                        checked <=> root.java-auto-download;
-                                        toggled => { root.save-clicked(); }
-                                    }
-
-                                    Text {
-                                        text: "Selected Runtime: " + root.java-selected-summary;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
-                                    }
-
-                                    VerticalLayout {
-                                        spacing: 4px;
-                                        Text { text: "Java Executable Path"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                        CrabTextInput {
-                                            text <=> root.java-manual-path;
-                                            enabled: !root.java-auto-select;
-                                            placeholder: "/usr/lib/jvm/.../bin/java";
-                                            edited => { root.save-clicked(); }
-                                        }
-                                    }
-
-                                    HorizontalLayout {
-                                        spacing: Theme.space-xs;
-                                        alignment: start;
-
-                                        CrabButton {
-                                            text: "Detect";
-                                            icon: @image-url("../../assets/icons/scan-search.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            clicked => { root.detect-java-selector-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Browse";
-                                            icon: @image-url("../../assets/icons/folder.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            clicked => { root.browse-java-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Test Settings";
-                                            icon: @image-url("../../assets/icons/flask-conical.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            enabled: root.java-manual-path != "" && !root.java-busy;
-                                            clicked => { root.test-java-clicked(root.java-manual-path); }
-                                        }
-                                        CrabButton {
-                                            text: "Open Java Downloader";
-                                            icon: @image-url("../../assets/icons/download.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            clicked => { root.open-install-java-clicked(); }
-                                        }
-                                    }
-
-                                    if root.java-status-message != "": Text {
-                                        text: root.java-status-message;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
-                                    }
-                                }
-
-                                SettingsSection {
-                                    title: "Memory";
-
-                                    VerticalLayout {
-                                        spacing: 4px;
-                                        Text { text: "Memory Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                        CrabDropdown {
-                                            width: 260px;
-                                            options: root.memory-preset-options;
-                                            selected-id <=> root.memory-preset-id;
-                                            selected-label: root.memory-preset-label;
-                                            selected(id) => { root.memory-preset-selected(id); }
-                                        }
-                                    }
-
-                                    HorizontalLayout {
-                                        spacing: Theme.space-lg;
-                                        alignment: start;
-
-                                        VerticalLayout {
-                                            width: 170px;
-                                            spacing: 4px;
-                                            Text { text: "Minimum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
-                                                text <=> root.min-memory-mb;
-                                                placeholder: "512";
-                                                edited(_) => { root.memory-fields-edited(); }
-                                            }
-                                        }
-                                        VerticalLayout {
-                                            width: 170px;
-                                            spacing: 4px;
-                                            Text { text: "Maximum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
-                                                text <=> root.max-memory-mb;
-                                                placeholder: "2048";
-                                                edited(_) => { root.memory-fields-edited(); }
-                                            }
-                                        }
-                                    }
-
-                                    Text {
-                                        text: "JVM flags: -Xms" + root.min-memory-mb + "M  -Xmx" + root.max-memory-mb + "M";
-                                        font-family: Theme.console-font-family;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                    }
-
-                                    if root.memory-warning != "": Text {
-                                        text: root.memory-warning;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.warning-text;
-                                        wrap: word-wrap;
-                                    }
-
-                                    if root.system-ram-display != "": Text {
-                                        text: "Total System Memory: " + root.system-ram-display
-                                            + (root.system-avail-ram-display != "" ? "  •  Available: " + root.system-avail-ram-display : "");
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                    }
-
-                                    CrabCheckbox {
-                                        label: "Warn when available memory is insufficient";
-                                        checked <=> root.warn-insufficient-memory;
-                                        toggled => { root.save-clicked(); }
-                                    }
-                                }
-
-                                SettingsSection {
-                                    title: "Java Arguments";
-
-                                    HorizontalLayout {
-                                        spacing: Theme.space-sm;
-                                        alignment: start;
-                                        VerticalLayout {
-                                            spacing: 4px;
-                                            Text { text: "Argument Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabDropdown {
-                                                width: 260px;
-                                                options: root.jvm-preset-options;
-                                                selected-id <=> root.jvm-preset-id;
-                                                selected-label: root.jvm-preset-label;
-                                                selected(id) => { root.jvm-preset-selected(id); }
-                                            }
-                                        }
-                                        VerticalLayout {
-                                            alignment: end;
-                                            CrabButton {
-                                                text: "Manage Presets...";
-                                                icon: @image-url("../../assets/icons/sliders-horizontal.svg");
-                                                has-icon: true;
-                                                variant: "secondary";
-                                                clicked => { root.manage-jvm-presets-clicked(); }
-                                            }
-                                        }
-                                    }
-
-                                    if root.jvm-preset-description != "": Text {
-                                        text: root.jvm-preset-description;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
-                                    }
-
-                                    if root.jvm-preset-compat != "": Text {
-                                        text: "Compatibility: " + root.jvm-preset-compat;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
-                                    }
-
-                                    TextEdit {
-                                        height: 84px;
-                                        text <=> root.jvm-args;
-                                        font-size: Theme.font-sm;
-                                        edited(_) => { root.jvm-args-edited(); }
-                                    }
-
-                                    if root.jvm-conflict-warning != "": Text {
-                                        text: root.jvm-conflict-warning;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.warning-text;
-                                        wrap: word-wrap;
-                                    }
-
-                                    HorizontalLayout {
-                                        spacing: Theme.space-xs;
-                                        alignment: start;
-
-                                        CrabButton {
-                                            text: "Reset to Default";
-                                            icon: @image-url("../../assets/icons/refresh.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            clicked => {
-                                                root.jvm-preset-selected("default");
-                                            }
-                                        }
-                                        CrabButton {
-                                            text: "Test Arguments";
-                                            icon: @image-url("../../assets/icons/flask-conical.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            clicked => {
-                                                root.test-jvm-args-clicked(
-                                                    root.java-manual-path,
-                                                    root.min-memory-mb,
-                                                    root.max-memory-mb,
-                                                    root.jvm-args
-                                                );
-                                            }
-                                        }
-                                        CrabButton {
-                                            text: "Copy Arguments";
-                                            icon: @image-url("../../assets/icons/copy.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            clicked => {
-                                                root.copy-jvm-args-clicked(
-                                                    "-Xms" + root.min-memory-mb + "M -Xmx" + root.max-memory-mb + "M " + root.jvm-args
-                                                );
-                                            }
-                                        }
-                                        CrabButton {
-                                            text: "Save as Preset";
-                                            icon: @image-url("../../assets/icons/save.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            enabled: root.jvm-args != "";
-                                            clicked => { root.save-as-jvm-preset-clicked(root.jvm-args); }
-                                        }
-                                    }
-
-                                    if root.jvm-test-result != "": Text {
-                                        text: root.jvm-test-result;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
-                                    }
-                                }
-                            }
-
-                            // 2: Console (Behavior + Appearance + Logging)
-                            if root.mc-subtab == 2: VerticalLayout {
                                 horizontal-stretch: 1;
                                 max-width: 99999px;
                                 spacing: 12px;
@@ -1195,32 +1250,32 @@ export component SettingsWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Show console automatically on launch";
                                         checked <=> root.show-console-on-launch;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Show console when Minecraft crashes";
                                         checked <=> root.show-console-on-crash;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Close console on successful exit";
                                         checked <=> root.close-console-on-exit;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Automatically scroll to latest log";
                                         checked <=> root.console-autoscroll;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Enable word wrap";
                                         checked <=> root.console-word-wrap;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Confirm before clearing console";
                                         checked <=> root.confirm-before-clearing-console;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                 }
 
@@ -1230,7 +1285,7 @@ export component SettingsWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Use theme default font (JetBrains Mono fallback)";
                                         checked <=> root.console-use-theme-font;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     HorizontalLayout {
@@ -1238,34 +1293,58 @@ export component SettingsWindow inherits Window {
                                         alignment: start;
 
                                         VerticalLayout {
-                                            width: 200px;
+                                            width: 224px;
                                             spacing: 4px;
                                             Text { text: "Font Family"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
-                                                text <=> root.console-font-family;
+                                            CrabDropdown {
+                                                width: 224px;
                                                 enabled: !root.console-use-theme-font;
-                                                placeholder: "JetBrains Mono";
-                                                edited => { root.save-clicked(); }
+                                                show-scroll-arrows: true;
+                                                preview-option-font: true;
+                                                selected-id: root.console-font-family;
+                                                selected-label: root.console-font-family != "" ? root.console-font-family : "JetBrains Mono";
+                                                current-index: root.console-font-family == "Fira Code" ? 1
+                                                    : root.console-font-family == "IBM Plex Mono" ? 2
+                                                    : root.console-font-family == "Source Code Pro" ? 3
+                                                    : 0;
+                                                options: [
+                                                    { id: "JetBrains Mono", label: "JetBrains Mono", detail: "Default", enabled: true, has-icon: false },
+                                                    { id: "Fira Code", label: "Fira Code", detail: "", enabled: true, has-icon: false },
+                                                    { id: "IBM Plex Mono", label: "IBM Plex Mono", detail: "", enabled: true, has-icon: false },
+                                                    { id: "Source Code Pro", label: "Source Code Pro", detail: "", enabled: true, has-icon: false },
+                                                ];
+                                                selected(v) => {
+                                                    root.console-font-family = v;
+                                                    root.has-unsaved-changes = true;
+                                                }
                                             }
                                         }
                                         VerticalLayout {
-                                            width: 110px;
+                                            width: 118px;
                                             spacing: 4px;
                                             Text { text: "Font Size (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
+                                                width: 118px;
                                                 text <=> root.console-font-size;
                                                 placeholder: "12";
-                                                edited => { root.save-clicked(); }
+                                                min-value: 8;
+                                                max-value: 32;
+                                                step: 1;
+                                                edited => { root.has-unsaved-changes = true; }
                                             }
                                         }
                                         VerticalLayout {
-                                            width: 120px;
+                                            width: 126px;
                                             spacing: 4px;
                                             Text { text: "Line Spacing (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
+                                                width: 126px;
                                                 text <=> root.console-line-spacing;
                                                 placeholder: "2";
-                                                edited => { root.save-clicked(); }
+                                                min-value: 0;
+                                                max-value: 16;
+                                                step: 1;
+                                                edited => { root.has-unsaved-changes = true; }
                                             }
                                         }
                                     }
@@ -1273,19 +1352,19 @@ export component SettingsWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Colorize log levels";
                                         checked <=> root.console-colorize-levels;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Show timestamps";
                                         checked <=> root.console-show-timestamps;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     HorizontalLayout {
                                         alignment: start;
                                         CrabButton {
                                             text: "Reset Console Appearance";
-                                            icon: @image-url("../../assets/icons/refresh.svg");
+                                            icon: Theme.icon-refresh;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => {
@@ -1295,6 +1374,7 @@ export component SettingsWindow inherits Window {
                                                 root.console-line-spacing = "2";
                                                 root.console-colorize-levels = true;
                                                 root.console-show-timestamps = true;
+                                                root.has-unsaved-changes = true;
                                             }
                                         }
                                     }
@@ -1310,14 +1390,22 @@ export component SettingsWindow inherits Window {
                                             width: 180px;
                                             spacing: 4px;
                                             Text { text: "Maximum Visible Log Lines"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput { text <=> root.console-max-lines; placeholder: "4000"; edited => { root.save-clicked(); } }
+                                            CrabNumberInput {
+                                                width: 140px;
+                                                text <=> root.console-max-lines;
+                                                placeholder: "4000";
+                                                min-value: 100;
+                                                max-value: 200000;
+                                                step: 500;
+                                                edited => { root.has-unsaved-changes = true; }
+                                            }
                                         }
                                     }
 
                                     CrabCheckbox {
                                         label: "Preserve complete log files on disk";
                                         checked <=> root.preserve-complete-logs;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     Text {
@@ -1332,14 +1420,14 @@ export component SettingsWindow inherits Window {
                                         alignment: start;
                                         CrabButton {
                                             text: "Open Logs Folder";
-                                            icon: @image-url("../../assets/icons/folder.svg");
+                                            icon: Theme.icon-folder;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.open-logs-folder-clicked(); }
                                         }
                                         CrabButton {
                                             text: "Copy Latest Log";
-                                            icon: @image-url("../../assets/icons/copy.svg");
+                                            icon: Theme.icon-copy;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.copy-latest-log-clicked(); }
@@ -1348,8 +1436,8 @@ export component SettingsWindow inherits Window {
                                 }
                             }
 
-                            // 3: Tweaks (Linux Performance Integration + System Information)
-                            if root.mc-subtab == 3: VerticalLayout {
+                            // 2: Tweaks (Linux Performance Integration + System Information)
+                            if root.mc-subtab == 2: VerticalLayout {
                                 horizontal-stretch: 1;
                                 max-width: 99999px;
                                 spacing: 12px;
@@ -1374,7 +1462,7 @@ export component SettingsWindow inherits Window {
                                                 label: "Enable Feral GameMode";
                                                 checked <=> root.enable-gamemode;
                                                 enabled: root.is-linux && root.gamemode-available;
-                                                toggled => { root.save-clicked(); }
+                                                toggled => { root.has-unsaved-changes = true; }
                                             }
                                             Text {
                                                 text: root.gamemode-available
@@ -1386,7 +1474,7 @@ export component SettingsWindow inherits Window {
                                             }
                                         }
                                         Text {
-                                            text: "Runs Minecraft through gamemoderun to request OS performance optimizations without affecting the Crab GUI.";
+                                            text: "Runs Minecraft through gamemoderun to request OS performance optimizations without affecting the Crab Launcher GUI.";
                                             font-size: Theme.font-xs;
                                             color: Theme.text-secondary;
                                             wrap: word-wrap;
@@ -1405,7 +1493,7 @@ export component SettingsWindow inherits Window {
                                                 label: "Enable MangoHud";
                                                 checked <=> root.enable-mangohud;
                                                 enabled: root.is-linux && root.mangohud-available;
-                                                toggled => { root.save-clicked(); }
+                                                toggled => { root.has-unsaved-changes = true; }
                                             }
                                             Text {
                                                 text: root.mangohud-available
@@ -1426,10 +1514,10 @@ export component SettingsWindow inherits Window {
                                             alignment: start;
                                             CrabButton {
                                                 text: "Open MangoHud Configuration";
-                                                icon: @image-url("../../assets/icons/external-link.svg");
+                                                icon: Theme.icon-external-link;
                                                 has-icon: true;
                                                 variant: "secondary";
-                                                enabled: root.is-linux;
+                                                enabled: root.is-linux && root.mangohud-available;
                                                 clicked => { root.open-mangohud-config-clicked(); }
                                             }
                                         }
@@ -1444,7 +1532,7 @@ export component SettingsWindow inherits Window {
                                             label: "Use Discrete GPU";
                                             checked <=> root.use-discrete-gpu;
                                             enabled: root.is-linux && root.discrete-gpu-available;
-                                            toggled => { root.save-clicked(); }
+                                            toggled => { root.has-unsaved-changes = true; }
                                         }
                                         Text {
                                             text: root.gpu-detail;
@@ -1466,7 +1554,7 @@ export component SettingsWindow inherits Window {
                                                 label: "Use Zink";
                                                 checked <=> root.use-zink;
                                                 enabled: root.is-linux;
-                                                toggled => { root.save-clicked(); }
+                                                toggled => { root.has-unsaved-changes = true; }
                                             }
                                             Text {
                                                 text: root.zink-available
@@ -1520,14 +1608,14 @@ export component SettingsWindow inherits Window {
 
                                         CrabButton {
                                             text: "Refresh System Information";
-                                            icon: @image-url("../../assets/icons/refresh.svg");
+                                            icon: Theme.icon-refresh;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.refresh-system-info-clicked(); }
                                         }
                                         CrabButton {
                                             text: "Copy System Information";
-                                            icon: @image-url("../../assets/icons/copy.svg");
+                                            icon: Theme.icon-copy;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.copy-system-info-clicked(); }
@@ -1563,11 +1651,14 @@ export component SettingsWindow inherits Window {
                                 font-size: Theme.font-sm;
                                 color: Theme.text-secondary;
                             }
-                            CrabTextInput {
-                                width: 120px;
+                            CrabNumberInput {
+                                width: 136px;
                                 text <=> root.max-concurrent-downloads;
                                 placeholder: "16";
-                                edited => { root.save-clicked(); }
+                                min-value: 1;
+                                max-value: 64;
+                                step: 1;
+                                edited => { root.has-unsaved-changes = true; }
                             }
                         }
                     }
@@ -1609,33 +1700,53 @@ export component SettingsWindow inherits Window {
                         color: Theme.text-primary;
                     }
 
-                    HorizontalLayout {
-                        spacing: 4px;
-                        alignment: start;
+                    Rectangle {
+                        height: Theme.button-height;
+                        background: transparent;
 
-                        CrabButton {
-                            text: "Themes";
-                            icon: @image-url("../../assets/icons/palette.svg");
-                            has-icon: true;
-                            variant: root.appearance-subtab == 0 ? "primary" : "secondary";
-                            clicked => { root.appearance-subtab = 0; }
-                        }
-                        CrabButton {
-                            text: "Icons";
-                            icon: @image-url("../../assets/icons/cube.svg");
-                            has-icon: true;
-                            variant: root.appearance-subtab == 1 ? "primary" : "secondary";
-                            clicked => {
-                                root.appearance-subtab = 1;
-                                root.refresh-icon-packs-clicked();
+                        TouchArea {
+                            scroll-event(ev) => {
+                                if (ev.delta-y > 0px) {
+                                    root.appearance-subtab = max(0, root.appearance-subtab - 1);
+                                    if (root.appearance-subtab == 1) { root.refresh-icon-packs-clicked(); }
+                                    return accept;
+                                } else if (ev.delta-y < 0px) {
+                                    root.appearance-subtab = min(2, root.appearance-subtab + 1);
+                                    if (root.appearance-subtab == 1) { root.refresh-icon-packs-clicked(); }
+                                    return accept;
+                                }
+                                reject
                             }
                         }
-                        CrabButton {
-                            text: "Instance Grid";
-                            icon: @image-url("../../assets/icons/layout-grid.svg");
-                            has-icon: true;
-                            variant: root.appearance-subtab == 2 ? "primary" : "secondary";
-                            clicked => { root.appearance-subtab = 2; }
+
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+
+                            CrabButton {
+                                text: "Themes";
+                                icon: Theme.icon-palette;
+                                has-icon: true;
+                                variant: root.appearance-subtab == 0 ? "primary" : "secondary";
+                                clicked => { root.appearance-subtab = 0; }
+                            }
+                            CrabButton {
+                                text: "Icons";
+                                icon: Theme.icon-cube;
+                                has-icon: true;
+                                variant: root.appearance-subtab == 1 ? "primary" : "secondary";
+                                clicked => {
+                                    root.appearance-subtab = 1;
+                                    root.refresh-icon-packs-clicked();
+                                }
+                            }
+                            CrabButton {
+                                text: "Other";
+                                icon: Theme.icon-sliders-horizontal;
+                                has-icon: true;
+                                variant: root.appearance-subtab == 2 ? "primary" : "secondary";
+                                clicked => { root.appearance-subtab = 2; }
+                            }
                         }
                     }
 
@@ -1651,23 +1762,27 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "Import Theme";
-                                icon: @image-url("../../assets/icons/plus.svg");
+                                icon: Theme.icon-plus;
                                 has-icon: true;
                                 variant: "secondary";
+                                tooltip: "Import a community theme ZIP";
+                                tooltip-align: "start";
                                 clicked => { root.import-theme-clicked(); }
                             }
                             CrabButton {
                                 text: "Refresh";
-                                icon: @image-url("../../assets/icons/refresh.svg");
+                                icon: Theme.icon-refresh;
                                 has-icon: true;
                                 variant: "secondary";
+                                tooltip: "Reload installed themes";
                                 clicked => { root.refresh-themes-clicked(); }
                             }
                             CrabButton {
                                 text: "Reset to Default";
-                                icon: @image-url("../../assets/icons/refresh.svg");
+                                icon: Theme.icon-refresh;
                                 has-icon: true;
                                 variant: "secondary";
+                                tooltip: "Restore Crab Dark theme";
                                 clicked => {
                                     root.selected-theme-id = "crab-dark";
                                     root.apply-theme-clicked("crab-dark");
@@ -1726,7 +1841,7 @@ export component SettingsWindow inherits Window {
                                                 if th.is-active: VerticalLayout {
                                                     alignment: center;
                                                     Image {
-                                                        source: @image-url("../../assets/icons/check.svg");
+                                                        source: Theme.icon-check;
                                                         width: 14px;
                                                         height: 14px;
                                                         colorize: Theme.accent;
@@ -1734,7 +1849,9 @@ export component SettingsWindow inherits Window {
                                                 }
                                             }
                                             Text {
-                                                text: th.description + " — " + th.author + " v" + th.version;
+                                                text: th.author != ""
+                                                    ? th.description + " — " + th.author + " v" + th.version
+                                                    : th.description;
                                                 font-size: Theme.font-xs;
                                                 color: Theme.text-secondary;
                                                 overflow: elide;
@@ -1800,23 +1917,27 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "Import Pack";
-                                icon: @image-url("../../assets/icons/plus.svg");
+                                icon: Theme.icon-plus;
                                 has-icon: true;
                                 variant: "secondary";
+                                tooltip: "Import a custom icon pack ZIP";
+                                tooltip-align: "start";
                                 clicked => { root.import-icon-pack-clicked(); }
                             }
                             CrabButton {
                                 text: "Refresh";
-                                icon: @image-url("../../assets/icons/refresh.svg");
+                                icon: Theme.icon-refresh;
                                 has-icon: true;
                                 variant: "secondary";
+                                tooltip: "Reload available icon packs";
                                 clicked => { root.refresh-icon-packs-clicked(); }
                             }
                             CrabButton {
                                 text: "Reset to Default";
-                                icon: @image-url("../../assets/icons/refresh.svg");
+                                icon: Theme.icon-refresh;
                                 has-icon: true;
                                 variant: "secondary";
+                                tooltip: "Restore default Lucide icon pack";
                                 clicked => { root.reset-icon-pack-clicked(); }
                             }
                         }
@@ -1842,12 +1963,15 @@ export component SettingsWindow inherits Window {
                                         clicked => {
                                             root.active-icon-pack-id = pk.id;
                                             root.icon-pack-selected(pk.id);
+                                            root.icon-pack-preview-requested(pk.id);
                                         }
                                         changed has-hover => {
                                             if (self.has-hover) {
                                                 root.hovered-icon-pack-id = pk.id;
+                                                root.icon-pack-preview-requested(pk.id);
                                             } else if (root.hovered-icon-pack-id == pk.id) {
                                                 root.hovered-icon-pack-id = "";
+                                                root.icon-pack-preview-requested(root.active-icon-pack-id);
                                             }
                                         }
                                     }
@@ -1874,7 +1998,7 @@ export component SettingsWindow inherits Window {
                                                 if pk.is-active: VerticalLayout {
                                                     alignment: center;
                                                     Image {
-                                                        source: @image-url("../../assets/icons/check.svg");
+                                                        source: Theme.icon-check;
                                                         width: 14px;
                                                         height: 14px;
                                                         colorize: Theme.accent;
@@ -1922,7 +2046,14 @@ export component SettingsWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     Text {
-                                        text: "Icon Preview — " + (root.preview-pack-id == "lucide-dark" ? "Lucide Dark" : root.preview-pack-id == "lucide" ? "Lucide" : root.preview-pack-id);
+                                        text: "Icon Preview — " + (
+                                            root.preview-pack-id == "lucide-dark" ? "Lucide Dark"
+                                            : root.preview-pack-id == "lucide" ? "Lucide"
+                                            : root.preview-pack-id == "phosphor-fill" ? "Phosphor (Fill)"
+                                            : root.preview-pack-id == "tabler" ? "Tabler"
+                                            : root.preview-pack-id == "fluent-system" ? "Fluent System"
+                                            : root.preview-pack-id
+                                        );
                                         font-size: Theme.font-xs;
                                         font-weight: 600;
                                         color: Theme.text-secondary;
@@ -1938,18 +2069,7 @@ export component SettingsWindow inherits Window {
                                     spacing: Theme.space-md;
                                     alignment: start;
 
-                                    for sample in [
-                                        @image-url("../../assets/icons/plus.svg"),
-                                        @image-url("../../assets/icons/folder.svg"),
-                                        @image-url("../../assets/icons/settings.svg"),
-                                        @image-url("../../assets/icons/play.svg"),
-                                        @image-url("../../assets/icons/edit.svg"),
-                                        @image-url("../../assets/icons/puzzle.svg"),
-                                        @image-url("../../assets/icons/file-text.svg"),
-                                        @image-url("../../assets/icons/search.svg"),
-                                        @image-url("../../assets/icons/refresh.svg"),
-                                        @image-url("../../assets/icons/trash.svg"),
-                                    ]: Rectangle {
+                                    for sample in root.icon-pack-preview-images: Rectangle {
                                         width: 34px;
                                         height: 34px;
                                         border-radius: Theme.radius-sm;
@@ -1996,23 +2116,20 @@ export component SettingsWindow inherits Window {
                                         font-weight: 600;
                                         color: Theme.text-secondary;
                                     }
-                                    HorizontalLayout {
-                                        spacing: Theme.space-xs;
-                                        alignment: start;
-                                        CrabButton {
-                                            text: "Small";
-                                            variant: root.grid-icon-size == 0 ? "primary" : "secondary";
-                                            clicked => { root.grid-icon-size = 0; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Medium";
-                                            variant: root.grid-icon-size == 1 ? "primary" : "secondary";
-                                            clicked => { root.grid-icon-size = 1; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Large";
-                                            variant: root.grid-icon-size == 2 ? "primary" : "secondary";
-                                            clicked => { root.grid-icon-size = 2; root.save-clicked(); }
+                                    CrabDropdown {
+                                        width: 240px;
+                                        show-scroll-arrows: true;
+                                        current-index: root.grid-icon-size;
+                                        options: [
+                                            { id: "0", label: "Small", detail: "", enabled: true, has-icon: false },
+                                            { id: "1", label: "Medium", detail: "", enabled: true, has-icon: false },
+                                            { id: "2", label: "Large", detail: "", enabled: true, has-icon: false },
+                                        ];
+                                        selected-id: root.grid-icon-size == 0 ? "0" : root.grid-icon-size == 2 ? "2" : "1";
+                                        selected-label: root.grid-icon-size == 0 ? "Small" : root.grid-icon-size == 2 ? "Large" : "Medium";
+                                        selected(id) => {
+                                            root.grid-icon-size = id == "0" ? 0 : id == "2" ? 2 : 1;
+                                            root.has-unsaved-changes = true;
                                         }
                                     }
                                 }
@@ -2025,23 +2142,20 @@ export component SettingsWindow inherits Window {
                                         font-weight: 600;
                                         color: Theme.text-secondary;
                                     }
-                                    HorizontalLayout {
-                                        spacing: Theme.space-xs;
-                                        alignment: start;
-                                        CrabButton {
-                                            text: "Compact";
-                                            variant: root.grid-spacing == 0 ? "primary" : "secondary";
-                                            clicked => { root.grid-spacing = 0; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Normal";
-                                            variant: root.grid-spacing == 1 ? "primary" : "secondary";
-                                            clicked => { root.grid-spacing = 1; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Spacious";
-                                            variant: root.grid-spacing == 2 ? "primary" : "secondary";
-                                            clicked => { root.grid-spacing = 2; root.save-clicked(); }
+                                    CrabDropdown {
+                                        width: 240px;
+                                        show-scroll-arrows: true;
+                                        current-index: root.grid-spacing;
+                                        options: [
+                                            { id: "0", label: "Compact", detail: "", enabled: true, has-icon: false },
+                                            { id: "1", label: "Normal", detail: "", enabled: true, has-icon: false },
+                                            { id: "2", label: "Spacious", detail: "", enabled: true, has-icon: false },
+                                        ];
+                                        selected-id: root.grid-spacing == 0 ? "0" : root.grid-spacing == 2 ? "2" : "1";
+                                        selected-label: root.grid-spacing == 0 ? "Compact" : root.grid-spacing == 2 ? "Spacious" : "Normal";
+                                        selected(id) => {
+                                            root.grid-spacing = id == "0" ? 0 : id == "2" ? 2 : 1;
+                                            root.has-unsaved-changes = true;
                                         }
                                     }
                                 }
@@ -2054,28 +2168,25 @@ export component SettingsWindow inherits Window {
                                         font-weight: 600;
                                         color: Theme.text-secondary;
                                     }
-                                    HorizontalLayout {
-                                        spacing: Theme.space-xs;
-                                        alignment: start;
-                                        CrabButton {
-                                            text: "Name";
-                                            variant: root.grid-sort-by == 0 ? "primary" : "secondary";
-                                            clicked => { root.grid-sort-by = 0; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Creation Date";
-                                            variant: root.grid-sort-by == 1 ? "primary" : "secondary";
-                                            clicked => { root.grid-sort-by = 1; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Last Played";
-                                            variant: root.grid-sort-by == 2 ? "primary" : "secondary";
-                                            clicked => { root.grid-sort-by = 2; root.save-clicked(); }
-                                        }
-                                        CrabButton {
-                                            text: "Manual Order";
-                                            variant: root.grid-sort-by == 3 ? "primary" : "secondary";
-                                            clicked => { root.grid-sort-by = 3; root.save-clicked(); }
+                                    CrabDropdown {
+                                        width: 240px;
+                                        show-scroll-arrows: true;
+                                        current-index: root.grid-sort-by;
+                                        options: [
+                                            { id: "0", label: "Name", detail: "", enabled: true, has-icon: false },
+                                            { id: "1", label: "Creation Date", detail: "", enabled: true, has-icon: false },
+                                            { id: "2", label: "Last Played", detail: "", enabled: true, has-icon: false },
+                                            { id: "3", label: "Manual Order", detail: "", enabled: true, has-icon: false },
+                                        ];
+                                        selected-id: root.grid-sort-by == 0 ? "0"
+                                            : root.grid-sort-by == 1 ? "1"
+                                            : root.grid-sort-by == 2 ? "2" : "3";
+                                        selected-label: root.grid-sort-by == 0 ? "Name"
+                                            : root.grid-sort-by == 1 ? "Creation Date"
+                                            : root.grid-sort-by == 2 ? "Last Played" : "Manual Order";
+                                        selected(id) => {
+                                            root.grid-sort-by = id == "0" ? 0 : id == "1" ? 1 : id == "2" ? 2 : 3;
+                                            root.has-unsaved-changes = true;
                                         }
                                     }
                                 }
@@ -2088,16 +2199,16 @@ export component SettingsWindow inherits Window {
                                         font-weight: 600;
                                         color: Theme.text-secondary;
                                     }
-                                    CrabCheckbox { label: "Show Instance Name"; checked <=> root.grid-show-name; toggled => { root.save-clicked(); } }
-                                    CrabCheckbox { label: "Show Minecraft Version"; checked <=> root.grid-show-version; toggled => { root.save-clicked(); } }
-                                    CrabCheckbox { label: "Show Modloader Badge"; checked <=> root.grid-show-modloader; toggled => { root.save-clicked(); } }
+                                    CrabCheckbox { label: "Show Instance Name"; checked <=> root.grid-show-name; toggled => { root.has-unsaved-changes = true; } }
+                                    CrabCheckbox { label: "Show Minecraft Version"; checked <=> root.grid-show-version; toggled => { root.has-unsaved-changes = true; } }
+                                    CrabCheckbox { label: "Show Modloader Badge"; checked <=> root.grid-show-modloader; toggled => { root.has-unsaved-changes = true; } }
                                 }
 
                                 HorizontalLayout {
                                     alignment: start;
                                     CrabButton {
                                         text: "Reset Grid Appearance";
-                                        icon: @image-url("../../assets/icons/refresh.svg");
+                                        icon: Theme.icon-refresh;
                                         has-icon: true;
                                         variant: "secondary";
                                         clicked => {
@@ -2108,6 +2219,53 @@ export component SettingsWindow inherits Window {
                                             root.grid-show-modloader = false;
                                             root.grid-sort-by = 1;
                                             root.save-clicked();
+                                        }
+                                    }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Visual Effects & Wallpaper";
+
+                                CrabCheckbox {
+                                    label: "Disable special visual effects (theme blur, glass overlays, etc.)";
+                                    checked <=> root.disable-special-effects;
+                                    toggled => {
+                                        root.has-unsaved-changes = true;
+                                        root.visual-effects-changed(root.disable-special-effects, root.wallpaper-opacity-text);
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text {
+                                        text: "Theme Wallpaper Opacity (%)";
+                                        font-size: Theme.font-xs;
+                                        font-weight: 600;
+                                        color: Theme.text-secondary;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: Theme.space-sm;
+                                        alignment: start;
+
+                                        CrabNumberInput {
+                                            width: 120px;
+                                            text <=> root.wallpaper-opacity-text;
+                                            placeholder: "100";
+                                            min-value: 0;
+                                            max-value: 100;
+                                            step: 5;
+                                            edited(val) => {
+                                                root.has-unsaved-changes = true;
+                                                root.visual-effects-changed(root.disable-special-effects, val);
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "%  (0% hides theme wallpapers, 100% full visibility)";
+                                            font-size: Theme.font-xs;
+                                            color: Theme.text-secondary;
+                                            vertical-alignment: center;
                                         }
                                     }
                                 }
@@ -2263,7 +2421,7 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "Add Offline";
-                                icon: @image-url("../../assets/icons/user-plus.svg");
+                                icon: Theme.icon-user-plus;
                                 has-icon: true;
                                 variant: "ghost";
                                 align-left: true;
@@ -2276,7 +2434,7 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "Refresh";
-                                icon: @image-url("../../assets/icons/refresh.svg");
+                                icon: Theme.icon-refresh;
                                 has-icon: true;
                                 variant: "ghost";
                                 align-left: true;
@@ -2285,7 +2443,7 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "Remove";
-                                icon: @image-url("../../assets/icons/trash.svg");
+                                icon: Theme.icon-trash;
                                 has-icon: true;
                                 variant: "flat-danger";
                                 align-left: true;
@@ -2297,7 +2455,7 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "Set Default";
-                                icon: @image-url("../../assets/icons/check.svg");
+                                icon: Theme.icon-check;
                                 has-icon: true;
                                 variant: "ghost";
                                 align-left: true;
@@ -2307,7 +2465,7 @@ export component SettingsWindow inherits Window {
 
                             CrabButton {
                                 text: "No Default";
-                                icon: @image-url("../../assets/icons/x.svg");
+                                icon: Theme.icon-x;
                                 has-icon: true;
                                 variant: "ghost";
                                 align-left: true;
@@ -2333,7 +2491,7 @@ export component SettingsWindow inherits Window {
                     }
 
                     Text {
-                        text: "Version " + root.app-version;
+                        text: "Crab Launcher " + root.app-version;
                         font-size: Theme.font-md;
                         font-weight: 600;
                         color: Theme.text-secondary;
@@ -2361,7 +2519,7 @@ export component SettingsWindow inherits Window {
                         alignment: start;
                         CrabButton {
                             text: "Copy System Information";
-                            icon: @image-url("../../assets/icons/copy.svg");
+                            icon: Theme.icon-copy;
                             has-icon: true;
                             variant: "secondary";
                             clicked => {
@@ -2400,13 +2558,24 @@ export component SettingsWindow inherits Window {
                 }
 
                 CrabButton {
+                    text: "Close";
+                    icon: Theme.icon-x;
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.close-clicked();
+                    }
+                }
+
+                CrabButton {
                     text: "OK";
-                    icon: @image-url("../../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "primary";
                     y: (parent.height - self.height) / 2;
                     clicked => {
-                        root.close-clicked();
+                        root.ok-clicked();
                     }
                 }
             }

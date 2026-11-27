@@ -1,0 +1,263 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+
+export struct OfflineAccountEntry {
+    id: string,
+    username: string,
+    is-default: bool,
+}
+
+/// Janela independente de seleção de conta offline para o modo Launch Offline (estilo nativo Crab Launcher).
+export component LaunchOfflineWindow inherits Window {
+    title: "Launch Offline — Crab Launcher";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    forward-focus: key-scope;
+    preferred-width: 400px;
+    preferred-height: 360px;
+    min-width: 350px;
+    min-height: 280px;
+    background: Theme.bg-primary;
+
+    in property <string> instance-id: "";
+    in property <string> instance-name: "";
+    in property <[OfflineAccountEntry]> offline-accounts: [];
+    in-out property <string> selected-account-id: "";
+    in property <string> error-message: "";
+
+    callback launch-with-account(string, string); // (instance_id, account_id)
+    callback add-offline-account-clicked();
+    callback cancel-clicked();
+
+    key-scope := FocusScope {
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape) {
+                root.cancel-clicked();
+                return accept;
+            }
+            if (ev.text == Key.Return && root.selected-account-id != "") {
+                root.launch-with-account(root.instance-id, root.selected-account-id);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    VerticalLayout {
+        padding: Theme.space-lg;
+        spacing: Theme.space-md;
+
+        // Cabeçalho compacto no estilo nativo do Crab (mesmo padrão de ChangeGroupWindow)
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    source: Theme.icon-user;
+                    width: 26px;
+                    height: 26px;
+                    colorize: Theme.accent;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 1px;
+
+                Text {
+                    text: root.instance-name != "" ? "Launch Offline — " + root.instance-name : "Launch Offline";
+                    font-size: Theme.font-lg;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: "Select an offline account to play locally.";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    overflow: elide;
+                }
+            }
+        }
+
+        if root.error-message != "": Rectangle {
+            border-radius: Theme.radius-sm;
+            background: Theme.error-bg;
+            border-width: 1px;
+            border-color: Theme.error-border;
+
+            HorizontalLayout {
+                padding: Theme.space-sm;
+                spacing: 6px;
+
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: Theme.icon-x;
+                        width: 14px;
+                        height: 14px;
+                        colorize: Theme.error-text;
+                    }
+                }
+
+                Text {
+                    text: root.error-message;
+                    font-size: Theme.font-xs;
+                    color: Theme.error-text;
+                    horizontal-stretch: 1;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Lista plana compacta de contas offline
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-secondary;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            if root.offline-accounts.length == 0: VerticalLayout {
+                padding: Theme.space-lg;
+                spacing: Theme.space-xs;
+                alignment: center;
+
+                Text {
+                    text: "No offline accounts yet";
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    color: Theme.text-secondary;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Add an offline account below to launch without signing in.";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-disabled;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+
+            if root.offline-accounts.length > 0: ListView {
+                width: parent.width;
+                height: parent.height;
+
+                for acc in root.offline-accounts: Rectangle {
+                    height: 38px;
+                    background: acc.id == root.selected-account-id
+                        ? Theme.accent-muted
+                        : acc-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                    acc-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.selected-account-id = acc.id;
+                        }
+                        double-clicked => {
+                            root.selected-account-id = acc.id;
+                            root.launch-with-account(root.instance-id, acc.id);
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Theme.space-md;
+                        padding-right: Theme.space-md;
+                        spacing: Theme.space-sm;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("../../assets/icons/steve-head.svg");
+                                width: 20px;
+                                height: 20px;
+                                image-rendering: pixelated;
+                            }
+                        }
+
+                        Text {
+                            text: acc.username;
+                            font-size: Theme.font-md;
+                            font-weight: acc.id == root.selected-account-id ? 600 : 400;
+                            color: acc.id == root.selected-account-id ? Theme.accent : Theme.text-primary;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        if acc.is-default: Text {
+                            text: "Default";
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+
+                        if acc.id == root.selected-account-id: VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: Theme.icon-check;
+                                width: 14px;
+                                height: 14px;
+                                colorize: Theme.accent;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        width: parent.width;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        // Rodapé limpo alinhado (igual aos demais diálogos do Crab)
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+
+            CrabButton {
+                text: "Add Offline";
+                icon: Theme.icon-user-plus;
+                has-icon: true;
+                variant: "secondary";
+                tooltip: "Create a new offline account";
+                tooltip-align: "start";
+                tooltip-above: true;
+                clicked => { root.add-offline-account-clicked(); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            CrabButton {
+                text: "Cancel";
+                icon: Theme.icon-x;
+                has-icon: true;
+                variant: "secondary";
+                clicked => { root.cancel-clicked(); }
+            }
+
+            CrabButton {
+                text: "Launch";
+                icon: Theme.icon-play;
+                has-icon: true;
+                variant: "primary";
+                enabled: root.selected-account-id != "";
+                tooltip: "Launch instance with selected offline account";
+                tooltip-align: "end";
+                tooltip-above: true;
+                clicked => {
+                    root.launch-with-account(root.instance-id, root.selected-account-id);
+                }
+            }
+        }
+    }
+}

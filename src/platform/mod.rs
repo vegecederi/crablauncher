@@ -95,30 +95,3 @@ pub fn pick_icon_file() -> Result<Option<PathBuf>> {
         ))
     }
 }
-
-pub fn pick_toml_file() -> Result<Option<PathBuf>> {
-    #[cfg(target_os = "linux")]
-    {
-        linux::pick_toml_file_native()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        Err(LauncherError::Launch(
-            "Native file picker is not configured for this platform.".to_string(),
-        ))
-    }
-}
-
-pub fn save_toml_file(default_name: &str) -> Result<Option<PathBuf>> {
-    #[cfg(target_os = "linux")]
-    {
-        linux::save_toml_file_native(default_name)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = default_name;
-        Err(LauncherError::Launch(
-            "Native save dialog is not configured for this platform.".to_string(),
-        ))
-    }
-}

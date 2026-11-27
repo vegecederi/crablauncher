@@ -16,8 +16,8 @@ export component CrabContextMenu inherits Rectangle {
     clip: true;
 
     menu-layout := VerticalLayout {
-        padding: 4px;
-        spacing: 2px;
+        padding: 6px;
+        spacing: 4px;
         @children
     }
 }
@@ -28,8 +28,8 @@ export component ContextMenuHeader inherits Rectangle {
     height: 24px;
 
     HorizontalLayout {
-        padding-left: Theme.space-md;
-        padding-right: Theme.space-md;
+        padding-left: 10px;
+        padding-right: 10px;
         Text {
             text: root.text;
             font-size: Theme.font-xs;
@@ -43,12 +43,12 @@ export component ContextMenuHeader inherits Rectangle {
 
 /// Divisor horizontal discreto para menus de contexto.
 export component ContextMenuDivider inherits Rectangle {
-    height: 5px;
+    height: 6px;
     Rectangle {
-        y: 2px;
+        y: 3px;
         height: 1px;
         width: parent.width;
-        background: Theme.border;
+        background: Theme.border-subtle;
     }
 }
 
@@ -63,7 +63,7 @@ export component ContextMenuItem inherits Rectangle {
 
     callback clicked();
 
-    height: 28px;
+    height: 32px;
     border-radius: Theme.radius-sm;
     background: !root.enabled
         ? transparent
@@ -91,9 +91,9 @@ export component ContextMenuItem inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: Theme.space-md;
-        padding-right: Theme.space-md;
-        spacing: 8px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
 
         if root.has-icon: VerticalLayout {
             alignment: center;
@@ -183,7 +183,7 @@ export component ContextMenuCheckItem inherits Rectangle {
                 border-color: root.checked ? Theme.accent : Theme.border;
 
                 if root.checked: Image {
-                    source: @image-url("../../assets/icons/check.svg");
+                    source: Theme.icon-check;
                     width: 11px;
                     height: 11px;
                     x: 1.5px;

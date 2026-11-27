@@ -6,7 +6,7 @@ import { CrabDialogFrame } from "../components/dialog-window.slint";
 
 /// Janela nativa dedicada para duplicar instâncias com seleção opcional de subpastas.
 export component CopyInstanceWindow inherits Window {
-    title: "Copy Instance — Crab";
+    title: "Copy Instance — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 400px;
@@ -80,7 +80,7 @@ export component CopyInstanceWindow inherits Window {
 
             CrabButton {
                 text: "Cancel";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancel-clicked(); }
@@ -88,7 +88,7 @@ export component CopyInstanceWindow inherits Window {
 
             CrabButton {
                 text: "Copy";
-                icon: @image-url("../../assets/icons/copy.svg");
+                icon: Theme.icon-copy;
                 has-icon: true;
                 variant: "primary";
                 enabled: root.new-name != "";

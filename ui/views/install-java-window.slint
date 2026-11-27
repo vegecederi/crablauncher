@@ -17,7 +17,7 @@ export struct JavaBuildItem {
 
 /// Janela independente de instalação de runtimes Java em 3 painéis (referência: Prism Launcher).
 export component InstallJavaWindow inherits Window {
-    title: "Install Java — Crab";
+    title: "Install Java — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 860px;
@@ -205,7 +205,7 @@ export component InstallJavaWindow inherits Window {
                             horizontal-stretch: 1;
                             text <=> root.build-search;
                             placeholder: "Search builds...";
-                            leading-icon: @image-url("../../assets/icons/search.svg");
+                            leading-icon: Theme.icon-search;
                             has-leading-icon: true;
                             edited => { root.filters-changed(); }
                         }
@@ -363,7 +363,7 @@ export component InstallJavaWindow inherits Window {
 
                 CrabButton {
                     text: "Refresh";
-                    icon: @image-url("../../assets/icons/refresh.svg");
+                    icon: Theme.icon-refresh;
                     has-icon: true;
                     variant: "secondary";
                     enabled: !root.is-loading && !root.is-installing;
@@ -373,7 +373,7 @@ export component InstallJavaWindow inherits Window {
 
                 CrabButton {
                     text: "Recommended";
-                    icon: @image-url("../../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "secondary";
                     enabled: !root.is-loading && !root.is-installing;
@@ -392,7 +392,7 @@ export component InstallJavaWindow inherits Window {
 
                 CrabButton {
                     text: "Cancel";
-                    icon: @image-url("../../assets/icons/x.svg");
+                    icon: Theme.icon-x;
                     has-icon: true;
                     variant: "secondary";
                     y: (parent.height - self.height) / 2;
@@ -401,7 +401,7 @@ export component InstallJavaWindow inherits Window {
 
                 CrabButton {
                     text: root.is-installing ? "Installing..." : "Download";
-                    icon: @image-url("../../assets/icons/download.svg");
+                    icon: Theme.icon-download;
                     has-icon: true;
                     variant: "primary";
                     enabled: root.selected-build-index >= 0 && !root.is-installing && !root.is-loading;

@@ -1,0 +1,192 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+
+/// Janela independente de aviso de incompatibilidade de Java antes do lançamento.
+export component JavaIncompatibleWindow inherits Window {
+    title: "Incompatible Java Version — Crab Launcher";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    forward-focus: key-scope;
+    preferred-width: 580px;
+    preferred-height: 320px;
+    min-width: 520px;
+    min-height: 290px;
+    background: Theme.bg-primary;
+
+    in-out property <string> instance-id: "";
+    in-out property <string> instance-name: "";
+    in-out property <string> mc-version: "";
+    in-out property <string> modloader-label: "Vanilla";
+    in-out property <string> current-java: "";
+    in-out property <string> recommended-java: "";
+    in-out property <int> recommended-major: 21;
+    in-out property <string> reason: "";
+
+    callback select-compatible-java-clicked(string);
+    callback download-java-clicked(string, int);
+    callback launch-anyway-clicked(string);
+    callback cancel-clicked();
+
+    key-scope := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        key-pressed(ev) => {
+            if (ev.text == Key.Escape) {
+                root.cancel-clicked();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: Theme.space-lg;
+            spacing: Theme.space-md;
+
+            // Cabeçalho limpo no padrão nativo do Crab Launcher
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: Theme.icon-coffee;
+                        width: 26px;
+                        height: 26px;
+                        colorize: Theme.warning-text;
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+
+                    Text {
+                        text: "Incompatible Java Runtime";
+                        font-size: Theme.font-lg;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: "The selected Java runtime may not work properly with '" + root.instance-name + "'.";
+                        font-size: Theme.font-xs;
+                        color: Theme.text-secondary;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            // Resumo estruturado (Minecraft / Modloader / Current Java / Required Java)
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-secondary;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: 8px;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-md;
+                        Text { text: "Minecraft"; width: 104px; font-size: Theme.font-xs; color: Theme.text-secondary; vertical-alignment: center; }
+                        Text { text: root.mc-version; font-size: Theme.font-sm; font-weight: 600; color: Theme.text-primary; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.space-md;
+                        Text { text: "Modloader"; width: 104px; font-size: Theme.font-xs; color: Theme.text-secondary; vertical-alignment: center; }
+                        Text { text: root.modloader-label != "" ? root.modloader-label : "Vanilla"; font-size: Theme.font-sm; font-weight: 600; color: Theme.text-primary; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.space-md;
+                        Text { text: "Current Java"; width: 104px; font-size: Theme.font-xs; color: Theme.text-secondary; vertical-alignment: center; }
+                        Text { text: root.current-java; font-size: Theme.font-sm; font-weight: 600; color: Theme.error-text; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.space-md;
+                        Text { text: "Required Java"; width: 104px; font-size: Theme.font-xs; color: Theme.text-secondary; vertical-alignment: center; }
+                        Text { text: root.recommended-java; font-size: Theme.font-sm; font-weight: 600; color: Theme.accent; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                    Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: Theme.warning-bg;
+                        border-width: 1px;
+                        border-color: Theme.warning-border;
+
+                        HorizontalLayout {
+                            padding: Theme.space-sm;
+                            spacing: 8px;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: Theme.icon-info;
+                                    width: 14px;
+                                    height: 14px;
+                                    colorize: Theme.warning-text;
+                                }
+                            }
+
+                            Text {
+                                text: root.reason;
+                                font-size: Theme.font-xs;
+                                color: Theme.warning-text;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Rodapé bem distribuído sem estourar a largura da janela
+            HorizontalLayout {
+                spacing: Theme.space-sm;
+
+                CrabButton {
+                    text: "Cancel";
+                    variant: "ghost";
+                    clicked => { root.cancel-clicked(); }
+                }
+
+                CrabButton {
+                    text: "Launch Anyway";
+                    variant: "secondary";
+                    tooltip: "Ignore compatibility warning and launch with current Java";
+                    tooltip-above: true;
+                    clicked => { root.launch-anyway-clicked(root.instance-id); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                CrabButton {
+                    text: "Download Java";
+                    icon: Theme.icon-download;
+                    has-icon: true;
+                    variant: "secondary";
+                    tooltip: "Automatically download a compatible Java runtime";
+                    tooltip-above: true;
+                    clicked => { root.download-java-clicked(root.instance-id, root.recommended-major); }
+                }
+
+                CrabButton {
+                    text: "Select Java";
+                    icon: Theme.icon-coffee;
+                    has-icon: true;
+                    variant: "primary";
+                    tooltip: "Select another installed Java runtime";
+                    tooltip-align: "end";
+                    tooltip-above: true;
+                    clicked => { root.select-compatible-java-clicked(root.instance-id); }
+                }
+            }
+        }
+    }
+}

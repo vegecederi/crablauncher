@@ -6,6 +6,7 @@ import { CrabTextInput } from "../components/input.slint";
 import { CrabCheckbox } from "../components/checkbox.slint";
 import { CrabDropdown, DropdownOption } from "../components/dropdown.slint";
 import { NavigationItem } from "../components/navigation-item.slint";
+import { DescriptionBlockItem, FilterOptionItem } from "download-mods-window.slint";
 
 export struct VersionItem {
     id: string,
@@ -22,18 +23,76 @@ export struct AddLoaderVersionItem {
     stable: bool,
 }
 
+export struct PackResultItem {
+    id: string,
+    title: string,
+    description: string,
+    author: string,
+    homepage-url: string,
+    icon-url: string,
+    icon: image,
+    has-icon: bool,
+}
+
 export component AddInstanceWindow inherits Window {
     title: Strings.add-window-title;
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
-    preferred-width: 780px;
-    preferred-height: 660px;
-    min-width: 640px;
-    min-height: 540px;
+    preferred-width: 960px;
+    preferred-height: 680px;
+    min-width: 780px;
+    min-height: 580px;
     background: Theme.bg-primary;
 
-    // Fonte ativa na sidebar (0 = Custom; preparado para futuras fontes)
     in-out property <int> active-source: 0;
+    in-out property <string> pack-path: "";
+    in-out property <string> pack-query: "";
+    in-out property <string> pack-project: "";
+    in-out property <string> pack-release: "";
+    in-out property <string> pack-sort-id: "relevance";
+    in-out property <string> pack-sort-label: "Sort by Relevance";
+    in-out property <bool> show-pack-filters: false;
+    in-out property <string> pack-mc-version-filter: "";
+    in property <[FilterOptionItem]> pack-filter-modloaders: [];
+    in property <[FilterOptionItem]> pack-filter-categories: [];
+    in property <[PackResultItem]> pack-results: [];
+    in property <[DropdownOption]> pack-releases: [];
+    in property <string> pack-release-label: "";
+    in property <string> pack-detail-title: "";
+    in property <string> pack-detail-author: "";
+    in property <string> pack-description: "";
+    in property <string> pack-detail-body: "";
+    in property <[DescriptionBlockItem]> pack-detail-blocks: [];
+    in property <string> pack-detail-homepage: "";
+    in property <string> pack-detail-issues-url: "";
+    in property <string> pack-detail-source-url: "";
+    in property <string> pack-detail-discord-url: "";
+    in property <string> pack-detail-wiki-url: "";
+    in property <string> pack-message: "";
+    in property <bool> pack-ready: false;
+    in property <bool> pack-loading: false;
+    in property <bool> pack-searching: false;
+    in property <bool> pack-loading-more: false;
+    in property <bool> pack-can-load-more: false;
+    in property <image> pack-icon;
+    in property <bool> has-pack-icon: false;
+    in property <string> pack-icon-url: "";
+    in property <int> pack-request: 0;
+    callback source-changed(int);
+    callback browse-pack();
+    callback inspect-pack();
+    callback pack-path-edited();
+    callback search-packs();
+    callback pack-load-more();
+    callback pack-sort-changed(string);
+    callback pack-filters-changed();
+    callback pack-toggle-filter-loader(string);
+    callback pack-toggle-filter-category(string);
+    callback pack-reset-filters();
+    callback select-pack(string);
+    callback select-pack-release(string);
+    callback open-pack-url(string);
+    callback install-pack();
 
     // Instance Information
     in-out property <string> instance-name: "";
@@ -88,46 +147,48 @@ export component AddInstanceWindow inherits Window {
     private property <bool> can-create:
         !root.is-creating
         && root.instance-name != ""
-        && root.selected-version-id != ""
-        && (root.selected-modloader == 0 || (!root.loader-loading && root.selected-loader-version != ""));
+        && (root.active-source == 0
+            ? root.selected-version-id != ""
+                && (root.selected-modloader == 0 || (!root.loader-loading && root.selected-loader-version != ""))
+            : root.pack-ready && !root.pack-loading);
 
     VerticalLayout {
-        padding: Theme.space-md;
-        spacing: Theme.space-md;
+        padding: Theme.space-sm;
+        spacing: Theme.space-sm;
 
         // 1. Top Section: Preview do ícone à esquerda + Instance Name à direita
         HorizontalLayout {
-            spacing: Theme.space-md;
+            spacing: Theme.space-sm;
 
             Rectangle {
-                width: 64px;
-                height: 64px;
+                width: 72px;
+                height: 72px;
                 border-radius: Theme.radius-sm;
                 background: icon-touch.has-hover ? Theme.bg-interactive : Theme.bg-secondary;
                 border-width: 1px;
                 border-color: icon-touch.has-hover ? Theme.accent : Theme.border;
 
                 icon-touch := TouchArea {
-                    enabled: !root.is-creating;
+                    enabled: !root.is-creating && root.active-source == 0;
                     mouse-cursor: pointer;
                     clicked => { root.change-icon-clicked(); }
                 }
 
-                if !root.has-selected-icon: Image {
-                    x: 10px;
-                    y: 10px;
-                    width: 44px;
-                    height: 44px;
-                    source: @image-url("../../assets/icons/cube.svg");
+                if !(root.active-source == 0 ? root.has-selected-icon : root.has-pack-icon): Image {
+                    x: 12px;
+                    y: 12px;
+                    width: 48px;
+                    height: 48px;
+                    source: Theme.icon-cube;
                     colorize: Theme.accent;
                 }
 
-                if root.has-selected-icon: Image {
+                if root.active-source == 0 ? root.has-selected-icon : root.has-pack-icon: Image {
                     x: 6px;
                     y: 6px;
-                    width: 52px;
-                    height: 52px;
-                    source: root.selected-icon-preview;
+                    width: 60px;
+                    height: 60px;
+                    source: root.active-source == 0 ? root.selected-icon-preview : root.pack-icon;
                     image-fit: contain;
                 }
             }
@@ -137,14 +198,17 @@ export component AddInstanceWindow inherits Window {
                 alignment: center;
                 spacing: 4px;
 
-                Text {
-                    text: Strings.instance-name-label;
-                    font-size: Theme.font-sm;
-                    font-weight: 600;
-                    color: Theme.text-secondary;
-                }
-
-                CrabTextInput {
+                HorizontalLayout {
+                    spacing: Theme.space-sm;
+                    Text {
+                        text: "Name:";
+                        width: 48px;
+                        font-size: Theme.font-sm;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                    }
+                    CrabTextInput {
+                    horizontal-stretch: 1;
                     text <=> root.instance-name;
                     placeholder: Strings.instance-name-placeholder;
                     enabled: !root.is-creating;
@@ -153,17 +217,19 @@ export component AddInstanceWindow inherits Window {
                     }
                     accepted => {
                         if (root.can-create) {
-                            root.create-clicked();
+                            if (root.active-source == 0) { root.create-clicked(); }
+                            else { root.install-pack(); }
                         }
                     }
+                }
                 }
 
                 HorizontalLayout {
                     spacing: Theme.space-sm;
                     Text {
                         text: "Group:";
-                        font-size: Theme.font-xs;
-                        font-weight: 600;
+                        width: 48px;
+                        font-size: Theme.font-sm;
                         color: Theme.text-secondary;
                         vertical-alignment: center;
                     }
@@ -179,18 +245,39 @@ export component AddInstanceWindow inherits Window {
             }
         }
 
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
         // 2. Corpo: Sidebar compacta à esquerda + área principal Custom à direita
         HorizontalLayout {
             vertical-stretch: 1;
-            spacing: Theme.space-md;
+            spacing: Theme.space-sm;
 
             // Sidebar compacta (inspirada no Prism Launcher)
             Rectangle {
-                width: 128px;
+                width: 132px;
                 border-radius: Theme.radius-sm;
                 background: Theme.bg-secondary;
                 border-width: 1px;
                 border-color: Theme.border;
+
+                // Atalho de scroll do mouse na barra lateral para alternar fonte (Custom / Import / Modrinth)
+                TouchArea {
+                    scroll-event(ev) => {
+                        if (root.is-creating) {
+                            return reject;
+                        }
+                        if (ev.delta-y > 0px) {
+                            let next = max(0, root.active-source - 1);
+                            if (next != root.active-source) { root.source-changed(next); }
+                            return accept;
+                        } else if (ev.delta-y < 0px) {
+                            let next = min(2, root.active-source + 1);
+                            if (next != root.active-source) { root.source-changed(next); }
+                            return accept;
+                        }
+                        reject
+                    }
+                }
 
                 VerticalLayout {
                     padding: Theme.space-xs;
@@ -198,20 +285,588 @@ export component AddInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Custom";
-                        icon: @image-url("../../assets/icons/cube.svg");
+                        icon: Theme.icon-cube;
                         selected: root.active-source == 0;
-                        clicked => { root.active-source = 0; }
+                        clicked => { if (!root.is-creating) { root.source-changed(0); } }
+                    }
+                    NavigationItem {
+                        label: "Import";
+                        icon: Theme.icon-folder;
+                        selected: root.active-source == 1;
+                        clicked => { if (!root.is-creating) { root.source-changed(1); } }
+                    }
+                    NavigationItem {
+                        label: "Modrinth";
+                        icon: @image-url("../../assets/providers/modrinth.svg");
+                        preserve-icon-colors: true;
+                        selected: root.active-source == 2;
+                        clicked => { if (!root.is-creating) { root.source-changed(2); } }
                     }
 
                     Rectangle { vertical-stretch: 1; }
                 }
             }
 
-            // Área principal: Custom
-            VerticalLayout {
+            if root.active-source == 1: VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: Theme.space-sm;
+                alignment: start;
+                Text { text: "Import"; font-size: Theme.font-md; font-weight: 600; color: Theme.text-primary; }
+                Text { text: "Local modpack or exported instance"; color: Theme.text-secondary; }
+                HorizontalLayout {
+                    spacing: Theme.space-xs;
+                    CrabTextInput {
+                        text <=> root.pack-path;
+                        placeholder: "Path to a .zip or .mrpack";
+                        horizontal-stretch: 1;
+                        enabled: !root.is-creating;
+                        edited(_) => { root.pack-path-edited(); }
+                        accepted(_) => { root.inspect-pack(); }
+                    }
+                    CrabButton {
+                        text: "Browse…";
+                        enabled: !root.is-creating && !root.pack-loading;
+                        clicked => { root.browse-pack(); }
+                    }
+                    CrabButton {
+                        text: "Load";
+                        enabled: !root.is-creating && !root.pack-loading && root.pack-path != "";
+                        clicked => { root.inspect-pack(); }
+                    }
+                }
+                Text {
+                    text: "Supported: Modrinth (.mrpack or .zip) and standard Prism/MultiMC instance exports (.zip).";
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                }
+                Text { text: root.pack-message; color: Theme.text-secondary; wrap: word-wrap; }
+            }
+
+            if root.active-source == 2: VerticalLayout {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
-                spacing: Theme.space-md;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: "Modrinth";
+                    font-size: Theme.font-xl;
+                    font-weight: 700;
+                    color: Theme.text-primary;
+                }
+
+                // Barra superior: Filter + Search (mesmo padrão da janela Download Mods)
+                HorizontalLayout {
+                    spacing: Theme.space-sm;
+
+                    CrabButton {
+                        height: Theme.button-height;
+                        text: "Filter";
+                        icon: Theme.icon-sliders-horizontal;
+                        has-icon: true;
+                        variant: root.show-pack-filters ? "primary" : "secondary";
+                        enabled: !root.is-creating;
+                        clicked => {
+                            root.show-pack-filters = !root.show-pack-filters;
+                        }
+                    }
+
+                    pack-search-input := CrabTextInput {
+                        horizontal-stretch: 1;
+                        text <=> root.pack-query;
+                        placeholder: "Search modpacks...";
+                        leading-icon: Theme.icon-search;
+                        has-leading-icon: true;
+                        enabled: !root.is-creating;
+                        accepted(_) => { root.search-packs(); }
+                    }
+                }
+
+                // Corpo dividido: Filtros opcionais + Lista de modpacks à esquerda + Detalhes ricos à direita
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: Theme.space-sm;
+
+                    if root.show-pack-filters: Rectangle {
+                        width: 212px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            padding: Theme.space-sm;
+                            spacing: Theme.space-sm;
+
+                            HorizontalLayout {
+                                spacing: Theme.space-xs;
+                                Text {
+                                    text: "Filters";
+                                    font-size: Theme.font-sm;
+                                    font-weight: 600;
+                                    color: Theme.text-primary;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+                                CrabButton {
+                                    text: "Reset";
+                                    variant: "ghost";
+                                    enabled: !root.is-creating;
+                                    clicked => { root.pack-reset-filters(); }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 12px;
+                                    padding-top: 2px;
+                                    padding-bottom: 6px;
+                                    padding-right: 4px;
+
+                                    VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Minecraft Version";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        CrabTextInput {
+                                            text <=> root.pack-mc-version-filter;
+                                            placeholder: "All versions";
+                                            enabled: !root.is-creating;
+                                            accepted(_) => { root.pack-filters-changed(); }
+                                            edited(_) => { root.pack-filters-changed(); }
+                                        }
+                                    }
+
+                                    if root.pack-filter-modloaders.length > 0: VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Modloaders";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        for ml in root.pack-filter-modloaders: CrabCheckbox {
+                                            label: ml.label;
+                                            checked: ml.checked;
+                                            enabled: !root.is-creating;
+                                            toggled => { root.pack-toggle-filter-loader(ml.id); }
+                                        }
+                                    }
+
+                                    if root.pack-filter-categories.length > 0: VerticalLayout {
+                                        alignment: start;
+                                        spacing: 4px;
+                                        Text {
+                                            text: "Categories";
+                                            font-size: Theme.font-xs;
+                                            font-weight: 600;
+                                            color: Theme.text-secondary;
+                                        }
+                                        for cat in root.pack-filter-categories: CrabCheckbox {
+                                            label: cat.label;
+                                            checked: cat.checked;
+                                            enabled: !root.is-creating;
+                                            toggled => { root.pack-toggle-filter-category(cat.id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Painel Esquerdo: Lista de modpacks com ícones reais + Sort abaixo
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            if root.pack-searching: pack-spinner := Rectangle {
+                                private property <float> spin-phase: mod(animation-tick() / 1ms, 900) / 900.0;
+                                private property <angle> spin-angle: self.spin-phase * 360deg;
+
+                                Rectangle {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 30px;
+                                    height: 30px;
+                                    border-radius: 15px;
+                                    border-width: 2.5px;
+                                    border-color: Theme.border;
+
+                                    Rectangle {
+                                        x: 15px + 12px * Math.cos(pack-spinner.spin-angle) - 3px;
+                                        y: 15px + 12px * Math.sin(pack-spinner.spin-angle) - 3px;
+                                        width: 6px;
+                                        height: 6px;
+                                        border-radius: 3px;
+                                        background: Theme.accent;
+                                    }
+                                }
+                            }
+
+                            if !root.pack-searching && root.pack-results.length == 0 && root.error-message != "": Text {
+                                text: "Failed to load modpacks. Check your connection and try again.";
+                                font-size: Theme.font-sm;
+                                color: Theme.error-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+
+                            if !root.pack-searching && root.pack-results.length == 0 && root.error-message == "": Text {
+                                text: root.pack-message != "" ? root.pack-message : "No modpacks found.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            if !root.pack-searching && root.pack-results.length > 0: ListView {
+                                width: parent.width;
+                                height: parent.height;
+                                scrolled => {
+                                    if (root.pack-can-load-more && !root.pack-loading-more
+                                        && -self.content-y + self.height >= self.content-height - 140px)
+                                    {
+                                        root.pack-load-more();
+                                    }
+                                }
+
+                                for pack in root.pack-results: Rectangle {
+                                    height: 64px;
+                                    background: pack.id == root.pack-project
+                                        ? Theme.accent-muted
+                                        : pack-touch.has-hover ? Theme.bg-interactive : transparent;
+
+                                    pack-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            if (!root.is-creating) {
+                                                root.select-pack(pack.id);
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-sm;
+                                        padding-right: Theme.space-sm;
+                                        spacing: Theme.space-sm;
+
+                                        // Ícone real 44x44
+                                        VerticalLayout {
+                                            width: 44px;
+                                            horizontal-stretch: 0;
+                                            alignment: center;
+                                            Rectangle {
+                                                width: 44px;
+                                                height: 44px;
+                                                border-radius: Theme.radius-sm;
+                                                background: Theme.bg-primary;
+                                                clip: true;
+
+                                                if pack.has-icon: Image {
+                                                    width: 44px;
+                                                    height: 44px;
+                                                    source: pack.icon;
+                                                    image-fit: cover;
+                                                }
+                                                if !pack.has-icon: Image {
+                                                    x: 10px;
+                                                    y: 10px;
+                                                    width: 24px;
+                                                    height: 24px;
+                                                    source: Theme.icon-cube;
+                                                    colorize: Theme.text-secondary;
+                                                }
+                                            }
+                                        }
+
+                                        // Título + descrição curta com elisão
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            min-width: 0px;
+                                            alignment: center;
+                                            spacing: 2px;
+
+                                            Text {
+                                                text: pack.title;
+                                                font-size: Theme.font-sm;
+                                                font-weight: 600;
+                                                color: pack.id == root.pack-project
+                                                    ? Theme.accent
+                                                    : Theme.text-primary;
+                                                overflow: elide;
+                                            }
+
+                                            Text {
+                                                text: pack.description;
+                                                font-size: Theme.font-xs;
+                                                color: Theme.text-secondary;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        height: 1px;
+                                        width: parent.width;
+                                        background: Theme.border-subtle;
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            CrabDropdown {
+                                width: 210px;
+                                open-upward: true;
+                                enabled: !root.is-creating;
+                                options: [
+                                    { id: "relevance", label: "Sort by Relevance", detail: "", enabled: true, has-icon: false },
+                                    { id: "downloads", label: "Sort by Downloads", detail: "", enabled: true, has-icon: false },
+                                    { id: "updated", label: "Sort by Updated", detail: "", enabled: true, has-icon: false },
+                                    { id: "newest", label: "Sort by Newest", detail: "", enabled: true, has-icon: false },
+                                ];
+                                selected-id <=> root.pack-sort-id;
+                                selected-label: root.pack-sort-label;
+                                selected(s) => { root.pack-sort-changed(s); }
+                            }
+                        }
+                    }
+
+                    // Painel Direito: Detalhes completos em Markdown + Links + Version selected abaixo
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Theme.space-sm;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-secondary;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            clip: true;
+
+                            if root.pack-project == "": Text {
+                                text: "Select a modpack to view its description, links and versions.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+
+                            if root.pack-project != "": Flickable {
+                                width: parent.width;
+                                height: parent.height;
+                                content-width: self.width;
+                                content-height: pack-detail-col.preferred-height + 24px;
+
+                                pack-detail-col := VerticalLayout {
+                                    width: parent.width;
+                                    padding: Theme.space-md;
+                                    spacing: Theme.space-sm;
+                                    alignment: start;
+
+                                    HorizontalLayout {
+                                        spacing: Theme.space-sm;
+                                        Text {
+                                            text: root.pack-detail-title;
+                                            font-size: Theme.font-lg;
+                                            font-weight: 700;
+                                            color: Theme.accent;
+                                            horizontal-stretch: 1;
+                                            wrap: word-wrap;
+                                        }
+                                        if root.pack-detail-homepage != "": CrabButton {
+                                            text: "Homepage";
+                                            icon: Theme.icon-external-link;
+                                            has-icon: true;
+                                            variant: "ghost";
+                                            clicked => { root.open-pack-url(root.pack-detail-homepage); }
+                                        }
+                                    }
+
+                                    if root.pack-detail-author != "": Text {
+                                        text: "by " + root.pack-detail-author;
+                                        font-size: Theme.font-xs;
+                                        color: Theme.text-secondary;
+                                    }
+
+                                    if root.pack-detail-issues-url != "" || root.pack-detail-source-url != "" || root.pack-detail-discord-url != "" || root.pack-detail-wiki-url != "": HorizontalLayout {
+                                        spacing: Theme.space-xs;
+                                        alignment: start;
+
+                                        if root.pack-detail-issues-url != "": CrabButton {
+                                            text: "Issues";
+                                            icon: Theme.icon-external-link;
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-pack-url(root.pack-detail-issues-url); }
+                                        }
+                                        if root.pack-detail-source-url != "": CrabButton {
+                                            text: "Source";
+                                            icon: Theme.icon-external-link;
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-pack-url(root.pack-detail-source-url); }
+                                        }
+                                        if root.pack-detail-discord-url != "": CrabButton {
+                                            text: "Discord";
+                                            icon: Theme.icon-external-link;
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-pack-url(root.pack-detail-discord-url); }
+                                        }
+                                        if root.pack-detail-wiki-url != "": CrabButton {
+                                            text: "Wiki";
+                                            icon: Theme.icon-external-link;
+                                            has-icon: true;
+                                            variant: "secondary";
+                                            clicked => { root.open-pack-url(root.pack-detail-wiki-url); }
+                                        }
+                                    }
+
+                                    Rectangle { height: 1px; background: Theme.border; }
+
+                                    if root.pack-detail-blocks.length == 0: Text {
+                                        text: root.pack-detail-body != "" ? root.pack-detail-body : root.pack-description;
+                                        font-size: Theme.font-sm;
+                                        color: Theme.text-primary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    for blk in root.pack-detail-blocks: VerticalLayout {
+                                        spacing: 2px;
+
+                                        if blk.kind == "heading": Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-lg;
+                                            font-weight: 700;
+                                            color: Theme.text-primary;
+                                            wrap: word-wrap;
+                                        }
+
+                                        if blk.kind == "subheading": Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-md;
+                                            font-weight: 600;
+                                            color: Theme.text-primary;
+                                            wrap: word-wrap;
+                                        }
+
+                                        if blk.kind == "paragraph": Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-sm;
+                                            color: Theme.text-primary;
+                                            wrap: word-wrap;
+                                        }
+
+                                        if blk.kind == "bullet": HorizontalLayout {
+                                            spacing: 6px;
+                                            Text { text: "•"; font-size: Theme.font-sm; color: Theme.accent; }
+                                            Text {
+                                                text: blk.text;
+                                                font-size: Theme.font-sm;
+                                                color: Theme.text-primary;
+                                                horizontal-stretch: 1;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+
+                                        if blk.kind == "link": HorizontalLayout {
+                                            alignment: start;
+                                            CrabButton {
+                                                text: blk.text;
+                                                icon: Theme.icon-external-link;
+                                                has-icon: true;
+                                                variant: "ghost";
+                                                clicked => { root.open-pack-url(blk.url); }
+                                            }
+                                        }
+
+                                        if blk.kind == "image" && blk.has-image: Rectangle {
+                                            height: 96px;
+                                            border-radius: Theme.radius-sm;
+                                            background: transparent;
+                                            clip: true;
+
+                                            Image {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                source: blk.image;
+                                                image-fit: contain;
+                                            }
+
+                                            if blk.url != "": TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => { root.open-pack-url(blk.url); }
+                                            }
+                                        }
+
+                                        if blk.kind == "separator": Rectangle {
+                                            height: 1px;
+                                            background: Theme.border;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Theme.space-sm;
+
+                            Text {
+                                text: "Version selected:";
+                                font-size: Theme.font-xs;
+                                color: Theme.text-secondary;
+                                vertical-alignment: center;
+                            }
+
+                            CrabDropdown {
+                                horizontal-stretch: 1;
+                                open-upward: true;
+                                options: root.pack-releases;
+                                selected-id <=> root.pack-release;
+                                selected-label: root.pack-release-label;
+                                enabled: root.pack-releases.length > 0 && !root.is-creating;
+                                selected(id) => { root.select-pack-release(id); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.active-source == 0: VerticalLayout {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                spacing: Theme.space-sm;
+
+                Text {
+                    text: "Custom";
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
 
                 if root.notice-message != "": Rectangle {
                     height: 28px;
@@ -346,7 +1001,7 @@ export component AddInstanceWindow inherits Window {
                                         vertical-stretch: 1;
 
                                         for ver in root.versions: Rectangle {
-                                            height: 28px;
+                                             height: 26px;
                                             background: ver.id == root.selected-version-id
                                                 ? Theme.accent-muted
                                                 : row-touch.has-hover
@@ -385,7 +1040,7 @@ export component AddInstanceWindow inherits Window {
                                                     if ver.recommended: VerticalLayout {
                                                         alignment: center;
                                                         Image {
-                                                            source: @image-url("../../assets/icons/star.svg");
+                                                            source: Theme.icon-star;
                                                             width: 12px;
                                                             height: 12px;
                                                             colorize: Theme.accent;
@@ -434,7 +1089,7 @@ export component AddInstanceWindow inherits Window {
                             CrabTextInput {
                                 text <=> root.search-query;
                                 placeholder: Strings.search-placeholder;
-                                leading-icon: @image-url("../../assets/icons/search.svg");
+                                leading-icon: Theme.icon-search;
                                 has-leading-icon: true;
                                 edited => { root.filters-changed(); }
                             }
@@ -451,6 +1106,7 @@ export component AddInstanceWindow inherits Window {
                             VerticalLayout {
                                 padding: Theme.space-sm;
                                 spacing: Theme.space-xs;
+                                alignment: start;
 
                                 Text {
                                     text: "Filter";
@@ -487,7 +1143,7 @@ export component AddInstanceWindow inherits Window {
 
                                 CrabButton {
                                     text: "Refresh";
-                                    icon: @image-url("../../assets/icons/refresh.svg");
+                                    icon: Theme.icon-refresh;
                                     has-icon: true;
                                     variant: "secondary";
                                     enabled: !root.is-loading;
@@ -500,7 +1156,8 @@ export component AddInstanceWindow inherits Window {
 
                 // 2B. Modloader Selection (Lista exclusiva à esquerda + tabela de versões à direita)
                 VerticalLayout {
-                    height: 172px;
+                    min-height: 220px;
+                    vertical-stretch: 1;
                     spacing: Theme.space-xs;
 
                     Text {
@@ -510,13 +1167,15 @@ export component AddInstanceWindow inherits Window {
                         color: Theme.text-secondary;
                     }
 
-                    HorizontalLayout {
+                    GridLayout {
                         vertical-stretch: 1;
                         spacing: Theme.space-sm;
 
                         // Esquerda: Vanilla / Fabric / Forge / NeoForge / Quilt / LiteLoader (com ScrollView para nunca sobrepor o rodapé)
                         Rectangle {
-                            width: 152px;
+                            col: 1;
+                            row: 0;
+                            width: 132px;
                             border-radius: Theme.radius-sm;
                             background: Theme.bg-secondary;
                             border-width: 1px;
@@ -530,6 +1189,7 @@ export component AddInstanceWindow inherits Window {
                                 VerticalLayout {
                                     padding: 4px;
                                     spacing: 2px;
+                                    alignment: start;
 
                                     for ml in [
                                         { idx: 0, label: "Vanilla", icon: @image-url("../../assets/modloaders/vanilla.svg") },
@@ -539,7 +1199,7 @@ export component AddInstanceWindow inherits Window {
                                         { idx: 4, label: "Quilt", icon: @image-url("../../assets/modloaders/quilt.png") },
                                         { idx: 5, label: "LiteLoader", icon: @image-url("../../assets/modloaders/liteloader.png") },
                                     ]: Rectangle {
-                                        height: 30px;
+                                        height: 28px;
                                         border-radius: Theme.radius-sm;
                                         border-width: root.selected-modloader == ml.idx ? 1px : 0px;
                                         background: root.selected-modloader == ml.idx
@@ -586,6 +1246,8 @@ export component AddInstanceWindow inherits Window {
 
                         // Direita: Tabela de versões do modloader selecionado
                         VerticalLayout {
+                            col: 0;
+                            row: 0;
                             horizontal-stretch: 1;
                             vertical-stretch: 1;
                             spacing: 4px;
@@ -599,11 +1261,12 @@ export component AddInstanceWindow inherits Window {
                                 clip: true;
 
                                 if root.selected-modloader == 0: Text {
-                                    text: "Vanilla Minecraft — no modloader will be installed.";
+                                    text: "No mod loader is selected.";
                                     font-size: Theme.font-sm;
                                     color: Theme.text-secondary;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
+                                    wrap: word-wrap;
                                 }
 
                                 if root.selected-modloader != 0 && root.loader-loading: Text {
@@ -656,7 +1319,7 @@ export component AddInstanceWindow inherits Window {
                                             if lv.recommended: VerticalLayout {
                                                 alignment: center;
                                                 Image {
-                                                    source: @image-url("../../assets/icons/star.svg");
+                                                    source: Theme.icon-star;
                                                     width: 12px;
                                                     height: 12px;
                                                     colorize: Theme.accent;
@@ -677,10 +1340,11 @@ export component AddInstanceWindow inherits Window {
                                 }
                             }
 
-                            if root.selected-modloader != 0 && root.loader-versions.length > 0: CrabTextInput {
+                            CrabTextInput {
+                                enabled: root.selected-modloader != 0 && !root.is-creating;
                                 text <=> root.loader-search-query;
                                 placeholder: "Filter loader versions...";
-                                leading-icon: @image-url("../../assets/icons/search.svg");
+                                leading-icon: Theme.icon-search;
                                 has-leading-icon: true;
                                 edited => { root.loader-search-changed(); }
                             }
@@ -711,11 +1375,18 @@ export component AddInstanceWindow inherits Window {
         }
 
         // 3. Footer
+        if root.active-source != 0 && root.error-message != "": Text {
+            text: root.error-message;
+            color: Theme.error-text;
+            wrap: word-wrap;
+        }
         HorizontalLayout {
             spacing: Theme.space-sm;
 
             Text {
-                text: root.selected-version-id != ""
+                text: root.active-source != 0
+                    ? (root.is-creating ? "Installing modpack files…" : "")
+                    : root.selected-version-id != ""
                     ? (root.selected-modloader == 0
                         ? "Minecraft " + root.selected-version-id + " • Vanilla"
                         : "Minecraft " + root.selected-version-id + " • " + root.modloader-name
@@ -731,7 +1402,7 @@ export component AddInstanceWindow inherits Window {
 
             CrabButton {
                 text: Strings.cancel;
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 enabled: !root.is-creating;
@@ -739,12 +1410,15 @@ export component AddInstanceWindow inherits Window {
             }
 
             CrabButton {
-                text: "Create Instance";
-                icon: @image-url("../../assets/icons/plus.svg");
+                text: root.active-source == 0 ? "Create Instance" : "Install Modpack";
+                icon: Theme.icon-check;
                 has-icon: true;
                 variant: "primary";
                 enabled: root.can-create;
-                clicked => { root.create-clicked(); }
+                clicked => {
+                    if (root.active-source == 0) { root.create-clicked(); }
+                    else { root.install-pack(); }
+                }
             }
         }
     }

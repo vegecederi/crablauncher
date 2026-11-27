@@ -333,6 +333,14 @@ pub struct AppearanceSettings {
     pub show_toolbar_labels: bool,
     #[serde(default)]
     pub compact_toolbar: bool,
+    #[serde(default)]
+    pub disable_special_effects: bool,
+    #[serde(default = "default_wallpaper_opacity")]
+    pub wallpaper_opacity: u32,
+}
+
+fn default_wallpaper_opacity() -> u32 {
+    100
 }
 
 fn default_theme_id() -> String {
@@ -361,6 +369,8 @@ impl Default for AppearanceSettings {
             show_status_bar: true,
             show_toolbar_labels: true,
             compact_toolbar: false,
+            disable_special_effects: false,
+            wallpaper_opacity: default_wallpaper_opacity(),
         }
     }
 }
@@ -427,8 +437,6 @@ pub struct MinecraftSettings {
     pub warn_insufficient_memory: bool,
     #[serde(default = "default_true")]
     pub use_default_jvm_args: bool,
-    #[serde(default = "default_jvm_preset_id")]
-    pub jvm_preset_id: String,
     #[serde(default)]
     pub jvm_args: String,
 
@@ -517,7 +525,6 @@ impl Default for MinecraftSettings {
             max_memory_mb: default_max_memory_mb(),
             warn_insufficient_memory: true,
             use_default_jvm_args: true,
-            jvm_preset_id: default_jvm_preset_id(),
             jvm_args: String::new(),
             window_width: default_window_width(),
             window_height: default_window_height(),
@@ -778,10 +785,6 @@ fn default_console_max_lines() -> usize {
     4000
 }
 
-fn default_jvm_preset_id() -> String {
-    "default".to_string()
-}
-
 fn default_max_concurrent() -> usize {
     16
 }
@@ -829,12 +832,8 @@ impl LauncherConfig {
                 self.minecraft.reopen_on_exit = legacy_restore;
                 self.minecraft.reopen_on_crash = legacy_restore;
             }
-            if !self.minecraft.jvm_args.trim().is_empty()
-                && self.minecraft.jvm_preset_id == "default"
-            {
-                // Preserva argumentos personalizados existentes migrando para o preset Custom.
+            if !self.minecraft.jvm_args.trim().is_empty() {
                 self.minecraft.use_default_jvm_args = false;
-                self.minecraft.jvm_preset_id = "custom".to_string();
             }
             if self.schema_version < 4 {
                 // Novo padrão visual do grid oculta a versão abaixo do nome.
@@ -842,6 +841,9 @@ impl LauncherConfig {
             }
             self.schema_version = CONFIG_SCHEMA_VERSION;
             changed = true;
+        }
+        if self.appearance.wallpaper_opacity > 100 {
+            self.appearance.wallpaper_opacity = 100;
         }
         if self.minecraft.console_font_family.trim().is_empty() {
             self.minecraft.console_font_family = default_console_font_family();

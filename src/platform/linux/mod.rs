@@ -162,58 +162,8 @@ pub fn pick_icon_file_native() -> Result<Option<PathBuf>> {
     )
 }
 
-/// Abre seletor nativo para importar um arquivo TOML de preset JVM.
-pub fn pick_toml_file_native() -> Result<Option<PathBuf>> {
-    pick_file_generic("Import JVM Preset", "*.toml", "TOML Preset Files")
-}
-
-/// Abre seletor nativo para exportar um arquivo TOML de preset JVM.
-pub fn save_toml_file_native(default_name: &str) -> Result<Option<PathBuf>> {
-    if let Some(zenity) = gamemode::find_in_path("zenity") {
-        let out = Command::new(zenity)
-            .args([
-                "--file-selection",
-                "--save",
-                "--confirm-overwrite",
-                "--title=Export JVM Preset",
-                &format!("--filename={default_name}.toml"),
-            ])
-            .output()
-            .map_err(|err| LauncherError::Launch(format!("Failed to launch file picker: {err}")))?;
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            return Ok(if path.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(path))
-            });
-        }
-        return Ok(None);
-    }
-    if let Some(kdialog) = gamemode::find_in_path("kdialog") {
-        let out = Command::new(kdialog)
-            .args([
-                "--getsavefilename",
-                &format!("{default_name}.toml"),
-                "*.toml|TOML Files",
-                "--title",
-                "Export JVM Preset",
-            ])
-            .output()
-            .map_err(|err| LauncherError::Launch(format!("Failed to launch file picker: {err}")))?;
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            return Ok(if path.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(path))
-            });
-        }
-        return Ok(None);
-    }
-    Err(LauncherError::Launch(
-        "No native file picker (zenity or kdialog) found.".to_string(),
-    ))
+pub fn pick_modpack_file_native() -> Result<Option<PathBuf>> {
+    pick_file_generic("Import Modpack", "*.zip *.mrpack", "Modpacks (ZIP, MRPACK)")
 }
 
 fn pick_file_generic(

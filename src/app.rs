@@ -1,4 +1,6 @@
-use crab_launcher::core::auth::account::MinecraftAccount;
+use crab_launcher::core::auth::account::{
+    offline_player_uuid, AccountKind, LaunchCredentials, MinecraftAccount,
+};
 use crab_launcher::core::auth::microsoft::{
     distribution_client_id, generate_qr_matrix, poll_device_code_token, start_device_code_flow,
 };
@@ -34,7 +36,7 @@ use crab_launcher::core::java::runtime::{probe_java_executable, test_jvm_argumen
 use crab_launcher::core::launch::command_builder::build_launch_command;
 use crab_launcher::core::launch::console::{ConsoleBuffer, LogLevel};
 use crab_launcher::core::launch::planner::{
-    build_launch_plan, build_launch_summary, ensure_legacy_fullscreen_option,
+    build_launch_plan_with_options, build_launch_summary, ensure_legacy_fullscreen_option,
     verify_required_files_incremental,
 };
 use crab_launcher::core::launch::process::{ProcessEvent, ProcessManager};
@@ -59,11 +61,6 @@ use crab_launcher::core::mods::platform::{
     ModRemoteVersion, ModSearchResult, ModSortBy, SearchFilters,
 };
 use crab_launcher::core::mods::rich_text::{parse_rich_description, RichBlock};
-use crab_launcher::core::presets::manager::{
-    create_custom_preset, delete_custom_preset, discover_jvm_presets, duplicate_preset,
-    export_preset, import_custom_preset, save_custom_preset,
-};
-use crab_launcher::core::presets::model::JvmPreset;
 use crab_launcher::core::resources::logs::{
     delete_session_log, list_session_logs, logs_dir, read_log_lines,
 };
@@ -92,10 +89,16 @@ use crab_launcher::platform::system_info::{
 };
 use crab_launcher::platform::{
     detect_system_capabilities, open_in_file_manager, open_mangohud_config, pick_icon_file,
-    pick_java_executable, pick_toml_file, save_toml_file,
+    pick_java_executable,
 };
 use crab_launcher::services::download::{DownloadManager, DEFAULT_MAX_CONCURRENT_DOWNLOADS};
 use crab_launcher::services::http::build_http_client;
+#[path = "app/context_menu_ui.rs"]
+mod context_menu_ui;
+#[path = "app/icon_pack_ui.rs"]
+mod icon_pack_ui;
+#[path = "app/modpack_ui.rs"]
+mod modpack_ui;
 use crab_launcher::services::instance_manager::InstanceManager;
 use crab_launcher::services::manifest_service::ManifestService;
 use crab_launcher::services::storage::{
@@ -136,7 +139,6 @@ struct AppState {
     select_icon_for_add: bool,
     themes: Vec<ResolvedTheme>,
     accounts: Vec<MinecraftAccount>,
-    jvm_presets: Vec<JvmPreset>,
     native_resolution: Option<(u32, u32)>,
     capabilities: SystemCapabilities,
     select_java_target: SelectJavaTarget,
@@ -167,7 +169,6 @@ impl AppState {
             select_icon_for_add: false,
             themes: Vec::new(),
             accounts: Vec::new(),
-            jvm_presets: Vec::new(),
             native_resolution: detect_native_monitor_resolution(),
             capabilities,
             select_java_target: SelectJavaTarget::EditInstance,
@@ -189,6 +190,165 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static REVIEW_MODS_WIN: std::cell::RefCell<Option<Weak<ReviewModsWindow>>> =
         const { std::cell::RefCell::new(None) };
+    static JAVA_INCOMPAT_WIN: std::cell::RefCell<Option<Weak<JavaIncompatibleWindow>>> =
+        const { std::cell::RefCell::new(None) };
+    static RENAME_FOLDER_WIN: std::cell::RefCell<Option<Weak<RenameFolderConfirmWindow>>> =
+        const { std::cell::RefCell::new(None) };
+    static LAUNCH_OFFLINE_WIN: std::cell::RefCell<Option<Weak<LaunchOfflineWindow>>> =
+        const { std::cell::RefCell::new(None) };
+    static PERSISTENT_CLIPBOARD: std::cell::RefCell<Option<arboard::Clipboard>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Copia texto para o clipboard mantendo a instância `arboard::Clipboard` viva no processo
+/// (evita perda imediata da seleção em X11/Wayland) com fallback para `wl-copy` sob Wayland.
+fn copy_text_to_clipboard(text: &str) -> bool {
+    let copied = PERSISTENT_CLIPBOARD.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = arboard::Clipboard::new().ok();
+        }
+        if let Some(cb) = slot.as_mut() {
+            if cb.set_text(text.to_string()).is_ok() {
+                return true;
+            }
+            // Se o display reconectou ou falhou, tenta recriar o handle uma vez.
+            if let Ok(mut fresh) = arboard::Clipboard::new() {
+                let ok = fresh.set_text(text.to_string()).is_ok();
+                *slot = Some(fresh);
+                return ok;
+            }
+        }
+        false
+    });
+    if copied {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            if let Ok(mut child) = std::process::Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[derive(Debug, Clone)]
+enum LaunchMode {
+    Normal,
+    Offline(LaunchCredentials),
+    Demo,
+}
+
+fn sync_launch_offline_window(
+    win: &LaunchOfflineWindow,
+    state: &Arc<Mutex<AppState>>,
+    preferred_account_id: Option<&str>,
+) {
+    let accounts: Vec<OfflineAccountEntry> = state
+        .lock()
+        .ok()
+        .map(|g| {
+            g.accounts
+                .iter()
+                .filter(|a| a.kind == AccountKind::Offline)
+                .map(|a| OfflineAccountEntry {
+                    id: SharedString::from(&a.id),
+                    username: SharedString::from(&a.username),
+                    is_default: a.is_default,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let current_sel = win.get_selected_account_id().to_string();
+    let next_sel = preferred_account_id
+        .and_then(|pid| accounts.iter().find(|a| a.id.as_str() == pid))
+        .or_else(|| accounts.iter().find(|a| a.id.as_str() == current_sel))
+        .or_else(|| accounts.iter().find(|a| a.is_default))
+        .or_else(|| accounts.first())
+        .map(|a| a.id.clone())
+        .unwrap_or_default();
+
+    win.set_offline_accounts(ModelRc::from(Rc::new(VecModel::from(accounts))));
+    win.set_selected_account_id(next_sel);
+}
+
+fn classify_status_kind(msg: &str) -> &'static str {
+    let lower = msg.to_ascii_lowercase();
+    if lower.contains("fail")
+        || lower.contains("error")
+        || lower.contains("crash")
+        || lower.contains("cannot")
+        || lower.contains("unable")
+        || lower.contains("invalid")
+        || lower.contains("incompatible")
+        || lower.contains("missing")
+        || lower.contains("denied")
+    {
+        "error"
+    } else if lower.contains("already running")
+        || lower.contains("warning")
+        || lower.contains("cancel")
+        || lower.contains("expired")
+        || lower.contains("unavailable")
+    {
+        "warning"
+    } else if lower.contains("downloading") || lower.contains("installing") {
+        "downloading"
+    } else if lower.contains("loading")
+        || lower.contains("fetching")
+        || lower.contains("checking")
+        || lower.contains("refreshing")
+        || lower.contains("authenticating")
+        || lower.contains("preparing")
+        || lower.contains("starting")
+        || lower.contains("stopping")
+        || lower.contains("repairing")
+        || lower.contains("updating")
+        || lower.contains("verifying")
+        || lower.contains("creating")
+        || lower.contains("copying")
+    {
+        "busy"
+    } else if lower.contains("running") || lower.contains("launched") {
+        "running"
+    } else if lower == "ready"
+        || lower.contains("saved")
+        || lower.contains("created")
+        || lower.contains("added")
+        || lower.contains("renamed")
+        || lower.contains("copied")
+        || lower.contains("deleted")
+        || lower.contains("removed")
+        || lower.contains("completed")
+        || lower.contains("installed")
+        || lower.contains("applied")
+        || lower.contains("updated")
+        || lower.contains("reset")
+    {
+        "success"
+    } else {
+        "info"
+    }
+}
+
+fn apply_main_status(win: &MainWindow, msg: impl Into<String>) {
+    let text = msg.into();
+    let kind = classify_status_kind(&text);
+    win.set_status_kind(SharedString::from(kind));
+    win.set_status_text(SharedString::from(text));
 }
 
 static ACTIVE_TASK_OP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -232,8 +392,67 @@ fn center_window_over(child: &slint::Window, parent: &slint::Window) {
     child.set_position(slint::PhysicalPosition::new(x.max(0), y.max(0)));
 }
 
+thread_local! {
+    static UNSAVED_SETTINGS_DIALOG: std::cell::RefCell<Option<Rc<UnsavedSettingsWindow>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[allow(dead_code)]
+fn confirm_settings_close(
+    parent: &slint::Window,
+    discard: impl Fn() + 'static,
+    save: impl Fn() + 'static,
+) {
+    UNSAVED_SETTINGS_DIALOG.with(|cell| {
+        let dialog = cell.borrow().as_ref().cloned();
+        if let Some(dialog) = dialog {
+            let weak = dialog.as_weak();
+            dialog.on_cancel(move || {
+                if let Some(w) = weak.upgrade() {
+                    let _ = w.hide();
+                }
+            });
+            let weak = dialog.as_weak();
+            dialog.on_discard(move || {
+                if let Some(w) = weak.upgrade() {
+                    let _ = w.hide();
+                }
+                discard();
+            });
+            let weak = dialog.as_weak();
+            dialog.on_save(move || {
+                if let Some(w) = weak.upgrade() {
+                    let _ = w.hide();
+                }
+                save();
+            });
+            center_window_over(dialog.window(), parent);
+            let _ = dialog.show();
+        }
+    });
+}
+
+fn request_global_settings_close(win: &SettingsWindow) {
+    if !win.get_has_unsaved_changes() {
+        let _ = win.hide();
+        return;
+    }
+    win.invoke_ok_clicked();
+}
+
+fn request_instance_settings_close(win: &EditInstanceWindow) {
+    if !win.get_has_unsaved_changes() {
+        let _ = win.hide();
+        return;
+    }
+    win.invoke_ok_clicked();
+}
+
 #[derive(Clone)]
 struct ThemeBroadcaster {
+    icon_packs_dir: PathBuf,
+    unsaved_settings: Weak<UnsavedSettingsWindow>,
+    context_menu: Weak<ContextMenuWindow>,
     main: Weak<MainWindow>,
     add: Weak<AddInstanceWindow>,
     settings: Weak<SettingsWindow>,
@@ -245,7 +464,6 @@ struct ThemeBroadcaster {
     edit: Weak<EditInstanceWindow>,
     console: Weak<ConsoleWindow>,
     launch_summary: Weak<LaunchSummaryWindow>,
-    manage_presets: Weak<ManageJvmPresetsWindow>,
     select_icon: Weak<SelectIconWindow>,
     task_progress: Weak<TaskProgressWindow>,
     download_mods: Weak<DownloadModsWindow>,
@@ -260,11 +478,20 @@ struct ThemeBroadcaster {
     review_mods: Weak<ReviewModsWindow>,
     check_updates: Weak<CheckUpdatesWindow>,
     verify_dependencies: Weak<VerifyDependenciesWindow>,
+    rename_folder_confirm: Weak<RenameFolderConfirmWindow>,
+    java_incompatible: Weak<JavaIncompatibleWindow>,
+    launch_offline: Weak<LaunchOfflineWindow>,
 }
 
 impl ThemeBroadcaster {
     /// Aplica o tema resolvido a TODAS as janelas Slint registradas (cada Window possui sua própria instância do global Theme).
     fn apply(&self, theme: &ResolvedTheme) {
+        if let Some(w) = self.unsaved_settings.upgrade() {
+            apply_theme_to_global(&w.global::<Theme>(), theme);
+        }
+        if let Some(w) = self.context_menu.upgrade() {
+            apply_theme_to_global(&w.global::<Theme>(), theme);
+        }
         if let Some(w) = self.main.upgrade() {
             apply_theme_to_global(&w.global::<Theme>(), theme);
         }
@@ -296,9 +523,6 @@ impl ThemeBroadcaster {
             apply_theme_to_global(&w.global::<Theme>(), theme);
         }
         if let Some(w) = self.launch_summary.upgrade() {
-            apply_theme_to_global(&w.global::<Theme>(), theme);
-        }
-        if let Some(w) = self.manage_presets.upgrade() {
             apply_theme_to_global(&w.global::<Theme>(), theme);
         }
         if let Some(w) = self.select_icon.upgrade() {
@@ -343,88 +567,126 @@ impl ThemeBroadcaster {
         if let Some(w) = self.verify_dependencies.upgrade() {
             apply_theme_to_global(&w.global::<Theme>(), theme);
         }
+        if let Some(w) = self.rename_folder_confirm.upgrade() {
+            apply_theme_to_global(&w.global::<Theme>(), theme);
+        }
+        if let Some(w) = self.java_incompatible.upgrade() {
+            apply_theme_to_global(&w.global::<Theme>(), theme);
+        }
+        if let Some(w) = self.launch_offline.upgrade() {
+            apply_theme_to_global(&w.global::<Theme>(), theme);
+        }
     }
 
     /// Aplica o Icon Pack ativo a TODAS as janelas Slint registradas imediatamente.
     fn apply_icon_pack(&self, pack_id: &str) {
+        let dir = &self.icon_packs_dir;
+        if let Some(w) = self.unsaved_settings.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
+        if let Some(w) = self.context_menu.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
         if let Some(w) = self.main.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.add.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.settings.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.ms_auth.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.install_java.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.install_loader.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.change_group.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.select_java.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.edit.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.console.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.launch_summary.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
-        }
-        if let Some(w) = self.manage_presets.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.select_icon.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.task_progress.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.download_mods.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.rename_instance.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.change_version.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.remove_account.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.confirm_dialog.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.text_input_dialog.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.server_dialog.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.add_offline_account.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.copy_instance.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
         if let Some(w) = self.review_mods.upgrade() {
-            apply_icon_pack_to_global(&w.global::<Theme>(), pack_id);
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
+        if let Some(w) = self.check_updates.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
+        if let Some(w) = self.verify_dependencies.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
+        if let Some(w) = self.rename_folder_confirm.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
+        if let Some(w) = self.java_incompatible.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
+        }
+        if let Some(w) = self.launch_offline.upgrade() {
+            icon_pack_ui::apply_icon_pack_to_global(&w.global::<Theme>(), pack_id, dir);
         }
     }
-}
 
-fn apply_icon_pack_to_global(theme_global: &Theme, pack_id: &str) {
-    theme_global.set_icon_pack_id(SharedString::from(pack_id));
-    theme_global.set_icon_pack_dark(pack_id == "lucide-dark");
+    /// Aplica imediatamente preferências de efeitos especiais (blur/glass) e opacidade do wallpaper.
+    fn apply_visual_effects(&self, disable_special_effects: bool, wallpaper_opacity_pct: u32) {
+        let opacity = (wallpaper_opacity_pct.min(100) as f32) / 100.0;
+        if let Some(w) = self.main.upgrade() {
+            let t = w.global::<Theme>();
+            t.set_disable_special_effects(disable_special_effects);
+            t.set_wallpaper_opacity(opacity);
+        }
+        if let Some(w) = self.settings.upgrade() {
+            let t = w.global::<Theme>();
+            t.set_disable_special_effects(disable_special_effects);
+            t.set_wallpaper_opacity(opacity);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -501,8 +763,6 @@ pub fn run(rt: Handle) -> Result<()> {
     let console_window = Rc::new(ConsoleWindow::new().expect("Failed to create ConsoleWindow"));
     let launch_summary_window =
         Rc::new(LaunchSummaryWindow::new().expect("Failed to create LaunchSummaryWindow"));
-    let manage_presets_window =
-        Rc::new(ManageJvmPresetsWindow::new().expect("Failed to create ManageJvmPresetsWindow"));
     let select_icon_window =
         Rc::new(SelectIconWindow::new().expect("Failed to create SelectIconWindow"));
     let task_progress_window =
@@ -527,6 +787,16 @@ pub fn run(rt: Handle) -> Result<()> {
         Rc::new(CopyInstanceWindow::new().expect("Failed to create CopyInstanceWindow"));
     let review_mods_window =
         Rc::new(ReviewModsWindow::new().expect("Failed to create ReviewModsWindow"));
+    let rename_folder_confirm_window = Rc::new(
+        RenameFolderConfirmWindow::new().expect("Failed to create RenameFolderConfirmWindow"),
+    );
+    let java_incompatible_window =
+        Rc::new(JavaIncompatibleWindow::new().expect("Failed to create JavaIncompatibleWindow"));
+    let launch_offline_window =
+        Rc::new(LaunchOfflineWindow::new().expect("Failed to create LaunchOfflineWindow"));
+    JAVA_INCOMPAT_WIN.with(|c| *c.borrow_mut() = Some(java_incompatible_window.as_weak()));
+    LAUNCH_OFFLINE_WIN.with(|c| *c.borrow_mut() = Some(launch_offline_window.as_weak()));
+    RENAME_FOLDER_WIN.with(|c| *c.borrow_mut() = Some(rename_folder_confirm_window.as_weak()));
     let check_updates_window =
         Rc::new(CheckUpdatesWindow::new().expect("Failed to create CheckUpdatesWindow"));
     let verify_dependencies_window = Rc::new(
@@ -587,7 +857,34 @@ pub fn run(rt: Handle) -> Result<()> {
         });
     }
 
+    let unsaved_settings_window =
+        Rc::new(UnsavedSettingsWindow::new().expect("Failed to create UnsavedSettingsWindow"));
+    UNSAVED_SETTINGS_DIALOG.with(|cell| {
+        *cell.borrow_mut() = Some(unsaved_settings_window.clone());
+    });
+    {
+        let weak = settings_window.as_weak();
+        settings_window.window().on_close_requested(move || {
+            if let Some(win) = weak.upgrade() {
+                request_global_settings_close(&win);
+            }
+            slint::CloseRequestResponse::KeepWindowShown
+        });
+        let weak = edit_window.as_weak();
+        edit_window.window().on_close_requested(move || {
+            if let Some(win) = weak.upgrade() {
+                request_instance_settings_close(&win);
+            }
+            slint::CloseRequestResponse::KeepWindowShown
+        });
+    }
+    let context_menu_window =
+        Rc::new(ContextMenuWindow::new().expect("Failed to create ContextMenuWindow"));
+    context_menu_ui::wire(&main_window, &context_menu_window);
     let theme_broadcaster = ThemeBroadcaster {
+        icon_packs_dir: paths.icon_packs_dir(),
+        unsaved_settings: unsaved_settings_window.as_weak(),
+        context_menu: context_menu_window.as_weak(),
         main: main_window.as_weak(),
         add: add_window.as_weak(),
         settings: settings_window.as_weak(),
@@ -599,7 +896,6 @@ pub fn run(rt: Handle) -> Result<()> {
         edit: edit_window.as_weak(),
         console: console_window.as_weak(),
         launch_summary: launch_summary_window.as_weak(),
-        manage_presets: manage_presets_window.as_weak(),
         select_icon: select_icon_window.as_weak(),
         task_progress: task_progress_window.as_weak(),
         download_mods: download_mods_window.as_weak(),
@@ -614,10 +910,13 @@ pub fn run(rt: Handle) -> Result<()> {
         review_mods: review_mods_window.as_weak(),
         check_updates: check_updates_window.as_weak(),
         verify_dependencies: verify_dependencies_window.as_weak(),
+        rename_folder_confirm: rename_folder_confirm_window.as_weak(),
+        java_incompatible: java_incompatible_window.as_weak(),
+        launch_offline: launch_offline_window.as_weak(),
     };
 
     main_window.set_app_version(SharedString::from(concat!("v", env!("CARGO_PKG_VERSION"))));
-    main_window.set_status_text(SharedString::from("Loading..."));
+    apply_main_status(&main_window, "Loading...");
     settings_window.set_app_version(SharedString::from(concat!("v", env!("CARGO_PKG_VERSION"))));
     settings_window.set_data_dir_display(SharedString::from(
         paths.data_dir.to_string_lossy().as_ref(),
@@ -654,7 +953,6 @@ pub fn run(rt: Handle) -> Result<()> {
         &install_java_window,
         &select_java_window,
         &console_window,
-        &manage_presets_window,
         &theme_broadcaster,
         &services,
     );
@@ -669,7 +967,6 @@ pub fn run(rt: Handle) -> Result<()> {
         &change_group_window,
         &select_java_window,
         &console_window,
-        &manage_presets_window,
         &services,
     );
     wire_select_java_callbacks(
@@ -678,7 +975,313 @@ pub fn run(rt: Handle) -> Result<()> {
         &select_java_window,
         &services,
     );
+
+    // Instance Renaming — janela de confirmação "Ask what to do" (Rename Folder / Keep Folder / Cancel)
+    {
+        let mw = main_window.as_weak();
+        let rfcw = rename_folder_confirm_window.as_weak();
+        let svc = services.clone();
+        let do_rename = move |id: SharedString, new_name: SharedString, rename_folder: bool| {
+            let id_str = id.to_string();
+            let name_str = new_name.to_string();
+            let mw = mw.clone();
+            let rfcw = rfcw.clone();
+            let svc = svc.clone();
+            let rt = svc.rt.clone();
+            rt.spawn(async move {
+                match svc
+                    .instance_manager
+                    .rename_instance_with_folder(&id_str, &name_str, rename_folder)
+                    .await
+                {
+                    Ok(updated) => {
+                        if let Ok(mut g) = svc.state.lock() {
+                            if let Some(item) = g.instances.iter_mut().find(|i| i.id == id_str) {
+                                *item = updated;
+                            }
+                        }
+                        let state = svc.state.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = rfcw.upgrade() {
+                                let _ = w.hide();
+                            }
+                            if let Some(main) = mw.upgrade() {
+                                refresh_main_ui(&main, &state, Some(&id_str));
+                            }
+                        });
+                    }
+                    Err(err) => {
+                        let msg = format!("Rename failed: {err}");
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = rfcw.upgrade() {
+                                let _ = w.hide();
+                            }
+                            if let Some(main) = mw.upgrade() {
+                                apply_main_status(&main, msg);
+                            }
+                        });
+                    }
+                }
+            });
+        };
+        let do_rename_yes = do_rename.clone();
+        rename_folder_confirm_window.on_rename_folder_clicked(move |id, new_name| {
+            do_rename_yes(id, new_name, true);
+        });
+        rename_folder_confirm_window.on_keep_folder_clicked(move |id, new_name| {
+            do_rename(id, new_name, false);
+        });
+        let rfcw_c = rename_folder_confirm_window.as_weak();
+        rename_folder_confirm_window.on_cancel_clicked(move || {
+            if let Some(w) = rfcw_c.upgrade() {
+                let _ = w.hide();
+            }
+        });
+    }
+
+    // Java Compatibility Check — janela independente de aviso de incompatibilidade
+    {
+        let jiw = java_incompatible_window.as_weak();
+        let ew = edit_window.as_weak();
+        let sjw = select_java_window.as_weak();
+        let svc = services.clone();
+        java_incompatible_window.on_select_compatible_java_clicked(move |inst_id| {
+            if let Some(w) = jiw.upgrade() {
+                let _ = w.hide();
+            }
+            if let Some(edit) = ew.upgrade() {
+                if populate_edit_instance_window(&edit, &svc, &inst_id) {
+                    edit.set_active_page(8);
+                    edit.set_settings_subtab(1);
+                    let _ = edit.show();
+                }
+            }
+            if let Some(sj) = sjw.upgrade() {
+                if let Ok(mut g) = svc.state.lock() {
+                    g.select_java_target = SelectJavaTarget::EditInstance;
+                }
+                populate_select_java_window(&sj, &svc.state);
+                let _ = sj.show();
+            }
+        });
+    }
+    {
+        let jiw = java_incompatible_window.as_weak();
+        let mw = main_window.as_weak();
+        let cw = console_window.as_weak();
+        let svc = services.clone();
+        java_incompatible_window.on_download_java_clicked(move |inst_id, major| {
+            if let Some(w) = jiw.upgrade() {
+                let _ = w.hide();
+            }
+            let req_major = (major as u32).max(8);
+            let iid = inst_id.to_string();
+            let mw = mw.clone();
+            let cw = cw.clone();
+            let svc = svc.clone();
+            let cancel = CancellationToken::new();
+            let _op_id = next_task_op_id();
+            if let Ok(mut g) = svc.state.lock() {
+                g.active_install_cancel = Some(cancel.clone());
+            }
+            with_task_progress(|tp| {
+                tp.set_task_title(SharedString::from(format!("Installing Java {req_major}")));
+                tp.set_step_text(SharedString::from("Step 1 of 1"));
+                tp.set_task_stage(SharedString::from(format!(
+                    "Downloading compatible Java {req_major} runtime..."
+                )));
+                tp.set_overall_progress(0.0);
+                tp.set_overall_percent_text(SharedString::from("0%"));
+                tp.set_indeterminate(true);
+                tp.set_is_paused(false);
+                tp.set_is_cancelling(false);
+                tp.set_elapsed_seconds(0);
+                tp.set_is_finished(false);
+                tp.set_error_message(SharedString::new());
+                tp.set_download_items(ModelRc::from(Rc::new(VecModel::<DownloadTaskRow>::from(
+                    vec![],
+                ))));
+                let _ = tp.show();
+            });
+            let rt = svc.rt.clone();
+            rt.spawn(async move {
+                match install_temurin_runtime(req_major, &svc.paths, &svc.download_manager, &cancel)
+                    .await
+                {
+                    Ok(installed) => {
+                        let custom_paths = svc
+                            .state
+                            .lock()
+                            .ok()
+                            .map(|g| g.config.java.custom_paths.clone())
+                            .unwrap_or_default();
+                        let runtimes = discover_java_runtimes(&svc.paths, &custom_paths).await;
+                        if let Ok(mut g) = svc.state.lock() {
+                            g.java_runtimes = runtimes;
+                            g.active_install_cancel = None;
+                        }
+                        let new_path = installed.path.to_string_lossy().into_owned();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            with_task_progress(|tp| {
+                                let _ = tp.hide();
+                            });
+                            if let Some(m) = mw.upgrade() {
+                                apply_main_status(
+                                    &m,
+                                    format!(
+                                        "Installed Java {req_major} ({new_path}). Launching..."
+                                    ),
+                                );
+                            }
+                            start_launch_flow_with_options(&mw, &cw, &svc, iid, true);
+                        });
+                    }
+                    Err(err) => {
+                        let msg = err.to_string();
+                        if let Ok(mut g) = svc.state.lock() {
+                            g.active_install_cancel = None;
+                        }
+                        let _ = slint::invoke_from_event_loop(move || {
+                            with_task_progress(|tp| {
+                                tp.set_is_finished(true);
+                                tp.set_is_cancelling(false);
+                                tp.set_indeterminate(false);
+                                tp.set_task_state(SharedString::from("Failed"));
+                                tp.set_error_message(SharedString::from(msg));
+                            });
+                        });
+                    }
+                }
+            });
+        });
+    }
+    {
+        let jiw = java_incompatible_window.as_weak();
+        let mw = main_window.as_weak();
+        let cw = console_window.as_weak();
+        let svc = services.clone();
+        java_incompatible_window.on_launch_anyway_clicked(move |inst_id| {
+            if let Some(w) = jiw.upgrade() {
+                let _ = w.hide();
+            }
+            start_launch_flow_with_options(&mw, &cw, &svc, inst_id.to_string(), true);
+        });
+    }
+    {
+        let jiw = java_incompatible_window.as_weak();
+        let mw = main_window.as_weak();
+        java_incompatible_window.on_cancel_clicked(move || {
+            if let Some(w) = jiw.upgrade() {
+                let _ = w.hide();
+            }
+            if let Some(m) = mw.upgrade() {
+                apply_main_status(&m, "Launch cancelled.");
+            }
+        });
+    }
+    // Launch Offline (janela independente com todas as contas offline)
+    {
+        let main_weak = main_window.as_weak();
+        let lo_win = Rc::clone(&launch_offline_window);
+        let svc = services.clone();
+        main_window.on_launch_offline_requested(move |id| {
+            let id_str = id.to_string();
+            let inst_name = svc
+                .state
+                .lock()
+                .ok()
+                .and_then(|g| {
+                    g.instances
+                        .iter()
+                        .find(|i| i.id == id_str)
+                        .map(|i| i.name.clone())
+                })
+                .unwrap_or_default();
+            lo_win.set_instance_id(SharedString::from(id_str));
+            lo_win.set_instance_name(SharedString::from(inst_name));
+            lo_win.set_error_message(SharedString::new());
+            sync_launch_offline_window(&lo_win, &svc.state, None);
+            if let Some(p) = main_weak.upgrade() {
+                center_window_over(lo_win.window(), p.window());
+            }
+            let _ = lo_win.show();
+        });
+    }
+    {
+        let main_weak = main_window.as_weak();
+        let console_weak = console_window.as_weak();
+        let lo_weak = launch_offline_window.as_weak();
+        let svc = services.clone();
+        launch_offline_window.on_launch_with_account(move |inst_id, acc_id| {
+            let acc_opt = svc.state.lock().ok().and_then(|g| {
+                g.accounts
+                    .iter()
+                    .find(|a| a.id == acc_id.as_str() && a.kind == AccountKind::Offline)
+                    .cloned()
+            });
+            let Some(acc) = acc_opt else {
+                if let Some(w) = lo_weak.upgrade() {
+                    w.set_error_message(SharedString::from(
+                        "Selected offline account is no longer available.",
+                    ));
+                    sync_launch_offline_window(&w, &svc.state, None);
+                }
+                return;
+            };
+            let creds = LaunchCredentials {
+                username: acc.username,
+                uuid: acc.uuid,
+                access_token: "0".to_string(),
+                xuid: "0".to_string(),
+                user_type: "legacy".to_string(),
+                is_offline: true,
+            };
+            if let Some(w) = lo_weak.upgrade() {
+                let _ = w.hide();
+            }
+            start_launch_flow_with_mode(
+                &main_weak,
+                &console_weak,
+                &svc,
+                inst_id.to_string(),
+                false,
+                LaunchMode::Offline(creds),
+            );
+        });
+    }
+    {
+        let ow = Rc::clone(&add_offline_account_window);
+        let lo_weak = launch_offline_window.as_weak();
+        launch_offline_window.on_add_offline_account_clicked(move || {
+            ow.set_username(SharedString::new());
+            ow.set_error_message(SharedString::new());
+            if let Some(p) = lo_weak.upgrade() {
+                center_window_over(ow.window(), p.window());
+            }
+            let _ = ow.show();
+            ow.invoke_focus_username();
+        });
+    }
+    {
+        let lo_weak = launch_offline_window.as_weak();
+        launch_offline_window.on_cancel_clicked(move || {
+            if let Some(w) = lo_weak.upgrade() {
+                let _ = w.hide();
+            }
+        });
+    }
     wire_change_group_callbacks(&main_window, &edit_window, &change_group_window, &services);
+    {
+        let window = change_group_window.clone();
+        let state = services.state.clone();
+        main_window.on_manage_groups_clicked(move || {
+            window.set_manage_mode(true);
+            window.set_search_query(SharedString::new());
+            if populate_change_group_window(&window, &state, "") {
+                let _ = window.show();
+            }
+        });
+    }
     wire_install_loader_callbacks(
         &main_window,
         &edit_window,
@@ -687,12 +1290,6 @@ pub fn run(rt: Handle) -> Result<()> {
     );
     wire_console_callbacks(&main_window, &console_window, &services);
     wire_launch_summary_callbacks(&launch_summary_window, &services);
-    wire_manage_jvm_presets_callbacks(
-        &settings_window,
-        &edit_window,
-        &manage_presets_window,
-        &services,
-    );
     wire_select_icon_callbacks(&main_window, &add_window, &select_icon_window, &services);
     wire_download_mods_callbacks(
         &edit_window,
@@ -844,7 +1441,6 @@ pub fn run(rt: Handle) -> Result<()> {
             let cfg_for_console = config.clone();
 
             let themes = discover_and_load_themes(&svc.paths.themes_dir());
-            let jvm_presets = discover_jvm_presets(&svc.paths.jvm_presets_dir());
             let active_theme = themes
                 .iter()
                 .find(|t| t.id == config.appearance.theme_id)
@@ -859,13 +1455,16 @@ pub fn run(rt: Handle) -> Result<()> {
                 guard.instances = instances;
                 guard.java_runtimes = java_runtimes;
                 guard.themes = themes;
-                guard.jvm_presets = jvm_presets;
             }
 
             let state_clone = svc.state.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 broadcaster.apply(&active_theme);
                 broadcaster.apply_icon_pack(&active_icon_pack_id);
+                broadcaster.apply_visual_effects(
+                    cfg_for_console.appearance.disable_special_effects,
+                    cfg_for_console.appearance.wallpaper_opacity,
+                );
                 if let Some(cw) = console_weak.upgrade() {
                     apply_console_appearance(&cw, &cfg_for_console);
                 }
@@ -880,7 +1479,7 @@ pub fn run(rt: Handle) -> Result<()> {
                     win.set_status_bar_position(SharedString::from(st_pos));
                     apply_grid_appearance(&win, &cfg_for_console);
                     refresh_main_ui(&win, &state_clone, selected_id.as_deref());
-                    win.set_status_text(SharedString::from("Ready"));
+                    apply_main_status(&win, "Ready");
                 }
             });
         });
@@ -904,6 +1503,7 @@ fn wire_main_callbacks(
     select_icon_window: &Rc<SelectIconWindow>,
     svc: &Services,
 ) {
+    modpack_ui::wire(main_window, add_window, svc);
     // Add Instance
     {
         let add_win = Rc::clone(add_window);
@@ -911,6 +1511,11 @@ fn wire_main_callbacks(
         let svc = svc.clone();
 
         main_window.on_add_instance_clicked(move || {
+            if add_win.get_is_creating() {
+                let _ = add_win.show();
+                return;
+            }
+            add_win.invoke_source_changed(0);
             add_win.set_instance_name(SharedString::new());
             add_win.set_user_edited_name(false);
             add_win.set_selected_icon_key(SharedString::new());
@@ -1114,9 +1719,10 @@ fn wire_main_callbacks(
                                 main.set_show_offline_account_dialog(false);
                                 main.set_offline_account_error(SharedString::new());
                                 update_active_account_label(&main, &state);
-                                main.set_status_text(SharedString::from(format!(
-                                    "Added offline account '{uname}'."
-                                )));
+                                apply_main_status(
+                                    &main,
+                                    format!("Added offline account '{uname}'."),
+                                );
                             }
                         });
                     }
@@ -1162,6 +1768,23 @@ fn wire_main_callbacks(
         let svc = svc.clone();
         main_window.on_launch_instance_clicked(move |id| {
             start_launch_flow(&main_weak, &console_weak, &svc, id.to_string());
+        });
+    }
+
+    // Launch Demo (ativa modo Demo oficial do Minecraft com `--demo` / `is_demo_user`)
+    {
+        let main_weak = main_window.as_weak();
+        let console_weak = console_window.as_weak();
+        let svc = svc.clone();
+        main_window.on_launch_demo_clicked(move |id| {
+            start_launch_flow_with_mode(
+                &main_weak,
+                &console_weak,
+                &svc,
+                id.to_string(),
+                false,
+                LaunchMode::Demo,
+            );
         });
     }
 
@@ -1402,9 +2025,10 @@ fn wire_main_callbacks(
                                     win.set_show_copy_dialog(false);
                                     win.set_copy_error(SharedString::new());
                                     refresh_main_ui(&win, &state, Some(&created_id));
-                                    win.set_status_text(SharedString::from(format!(
-                                        "Copied instance to '{created_name}'."
-                                    )));
+                                    apply_main_status(
+                                        &win,
+                                        format!("Copied instance to '{created_name}'."),
+                                    );
                                 }
                             });
                         }
@@ -1452,7 +2076,7 @@ fn wire_main_callbacks(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(win) = main_weak.upgrade() {
                                 refresh_main_ui(&win, &state, next_selected.as_deref());
-                                win.set_status_text(SharedString::from("Instance deleted"));
+                                apply_main_status(&win, "Instance deleted");
                             }
                         });
                     }
@@ -1491,19 +2115,12 @@ fn wire_main_callbacks(
                         let state = svc.state.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(win) = main_weak.upgrade() {
-                                win.set_show_group_dialog(false);
-                                win.set_group_dialog_error(SharedString::new());
                                 refresh_main_ui(&win, &state, selected.as_deref());
                             }
                         });
                     }
                     Err(err) => {
-                        let msg = err.to_string();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(win) = main_weak.upgrade() {
-                                win.set_group_dialog_error(SharedString::from(msg));
-                            }
-                        });
+                        set_status(&main_weak, format!("Failed to save group: {err}"));
                     }
                 }
             });
@@ -1822,10 +2439,10 @@ fn wire_add_window_callbacks(
                             }
                             if let Some(main) = main_weak_ui.upgrade() {
                                 refresh_main_ui(&main, &state, Some(&created_id));
-                                main.set_status_text(SharedString::from(format!(
-                                    "Created '{}'. Starting installation...",
-                                    created_name
-                                )));
+                                apply_main_status(
+                                    &main,
+                                    format!("Created '{}'. Starting installation...", created_name),
+                                );
                             }
                         });
 
@@ -1858,7 +2475,6 @@ fn wire_settings_callbacks(
     install_java_window: &Rc<InstallJavaWindow>,
     select_java_window: &Rc<SelectJavaWindow>,
     console_window: &Rc<ConsoleWindow>,
-    manage_presets_window: &Rc<ManageJvmPresetsWindow>,
     theme_broadcaster: &ThemeBroadcaster,
     svc: &Services,
 ) {
@@ -1984,45 +2600,11 @@ fn wire_settings_callbacks(
         });
     }
 
-    // JVM Argument Preset dropdown
-    {
-        let sw = settings_window.as_weak();
-        let state = svc.state.clone();
-        settings_window.on_jvm_preset_selected(move |preset_id| {
-            let Some(win) = sw.upgrade() else { return };
-            let pid = preset_id.to_string();
-            if pid == "custom" {
-                win.set_use_default_jvm_args(false);
-                win.set_jvm_preset_id(SharedString::from("custom"));
-                win.set_jvm_preset_label(SharedString::from("Custom"));
-                win.set_jvm_preset_description(SharedString::from(
-                    "Custom user-defined JVM arguments.",
-                ));
-                win.set_jvm_preset_compat(SharedString::new());
-                return;
-            }
-            let found = state
-                .lock()
-                .ok()
-                .and_then(|g| g.jvm_presets.iter().find(|p| p.id == pid).cloned());
-            if let Some(p) = found {
-                win.set_use_default_jvm_args(p.id == "default");
-                win.set_jvm_preset_id(SharedString::from(&p.id));
-                win.set_jvm_preset_label(SharedString::from(&p.name));
-                win.set_jvm_preset_description(SharedString::from(&p.description));
-                win.set_jvm_preset_compat(SharedString::from(p.compatibility_summary()));
-                win.set_jvm_args(SharedString::from(p.args_string()));
-                win.set_jvm_conflict_warning(SharedString::new());
-            }
-        });
-    }
     {
         let sw = settings_window.as_weak();
         settings_window.on_jvm_args_edited(move || {
             let Some(win) = sw.upgrade() else { return };
             win.set_use_default_jvm_args(false);
-            win.set_jvm_preset_id(SharedString::from("custom"));
-            win.set_jvm_preset_label(SharedString::from("Custom"));
             let conflicts = detect_conflicting_jvm_args(&win.get_jvm_args());
             win.set_jvm_conflict_warning(SharedString::from(if conflicts.is_empty() {
                 String::new()
@@ -2035,36 +2617,6 @@ fn wire_settings_callbacks(
         });
     }
 
-    // Manage JVM Presets / Save as Preset
-    {
-        let mp_win = Rc::clone(manage_presets_window);
-        let svc = svc.clone();
-        settings_window.on_manage_jvm_presets_clicked(move || {
-            populate_manage_presets_window(&mp_win, &svc, None);
-            let _ = mp_win.show();
-        });
-    }
-    {
-        let mp_win = Rc::clone(manage_presets_window);
-        let svc = svc.clone();
-        settings_window.on_save_as_jvm_preset_clicked(move |raw_args| {
-            let dir = svc.paths.jvm_presets_dir();
-            if let Ok(created) = create_custom_preset(
-                &dir,
-                "Custom Preset",
-                "Saved from Global Minecraft Settings",
-                &raw_args,
-                8,
-            ) {
-                let presets = discover_jvm_presets(&dir);
-                if let Ok(mut g) = svc.state.lock() {
-                    g.jvm_presets = presets;
-                }
-                populate_manage_presets_window(&mp_win, &svc, Some(&created.id));
-                let _ = mp_win.show();
-            }
-        });
-    }
     // Detect Java (abre SelectJavaWindow mirando Global Settings)
     {
         let sj_win = Rc::clone(select_java_window);
@@ -2646,13 +3198,13 @@ fn wire_settings_callbacks(
         });
     }
 
-    // Save Settings
+    // Save Settings (Apply = salva sem fechar; OK = salva e só fecha se salvar sem erro)
     {
         let main_weak = main_window.as_weak();
         let settings_weak = settings_window.as_weak();
         let console_weak = console_window.as_weak();
         let svc = svc.clone();
-        settings_window.on_save_clicked(move || {
+        let persist_global_settings = move |close_on_success: bool| {
             let Some(win) = settings_weak.upgrade() else {
                 return;
             };
@@ -2735,25 +3287,35 @@ fn wire_settings_callbacks(
             updated.folders.downloads_dir = win.get_folder_downloads().to_string();
             if let Ok(v) = win.get_console_history_limit().trim().parse::<u32>() {
                 updated.console.log_history_limit = v.clamp(100, 1_000_000);
+            } else {
+                win.set_error_message(SharedString::from("Invalid console log history limit."));
+                return;
             }
             updated.console.stop_logging_on_overflow = win.get_console_stop_on_overflow();
             if let Ok(v) = win.get_concurrent_task_limit().trim().parse::<u32>() {
                 updated.tasks.concurrent_task_limit = v.clamp(1, 64);
+            } else {
+                win.set_error_message(SharedString::from("Invalid concurrent task limit."));
+                return;
             }
             if let Ok(v) = win.get_concurrent_download_limit().trim().parse::<u32>() {
                 updated.tasks.concurrent_download_limit = v.clamp(1, 32);
+            } else {
+                win.set_error_message(SharedString::from("Invalid concurrent download limit."));
+                return;
             }
             if let Ok(v) = win.get_retry_limit().trim().parse::<u32>() {
                 updated.tasks.retry_limit = v.min(10);
+            } else {
+                win.set_error_message(SharedString::from("Invalid retry limit."));
+                return;
             }
             if let Ok(v) = win.get_http_timeout_secs().trim().parse::<u32>() {
                 updated.tasks.http_timeout_secs = v.clamp(5, 600);
+            } else {
+                win.set_error_message(SharedString::from("Invalid HTTP timeout value."));
+                return;
             }
-            svc.download_manager.apply_task_settings(
-                updated.tasks.concurrent_download_limit as usize,
-                updated.tasks.retry_limit,
-                updated.tasks.http_timeout_secs as u64,
-            );
             updated.general.confirm_group_delete = win.get_confirm_group_delete();
             updated.general.launch_on_double_click = win.get_launch_on_double_click();
             updated.java.auto_select = win.get_java_auto_select();
@@ -2784,21 +3346,27 @@ fn wire_settings_callbacks(
             updated.minecraft.allow_multiple_instances = win.get_allow_multiple_instances();
             updated.minecraft.confirm_before_stopping = win.get_confirm_before_stopping();
 
-            // Minecraft — Java
+            // Java — Memory & Arguments
             updated.minecraft.min_memory_mb = min_mem;
             updated.minecraft.max_memory_mb = max_mem;
             updated.minecraft.warn_insufficient_memory = win.get_warn_insufficient_memory();
-            updated.minecraft.jvm_preset_id = win.get_jvm_preset_id().to_string();
-            updated.minecraft.use_default_jvm_args = updated.minecraft.jvm_preset_id == "default";
+            updated.minecraft.use_default_jvm_args = win.get_use_default_jvm_args();
             updated.minecraft.jvm_args = win.get_jvm_args().trim().to_string();
 
-            // Appearance — Instance Grid
+            // Appearance — Other (Instance Grid + Visual Effects & Wallpaper)
             updated.appearance.icon_size = InstanceIconSize::from_index(win.get_grid_icon_size());
             updated.appearance.grid_spacing =
                 InstanceGridSpacing::from_index(win.get_grid_spacing());
             updated.appearance.show_instance_name = win.get_grid_show_name();
             updated.appearance.show_mc_version = win.get_grid_show_version();
             updated.appearance.show_modloader_badge = win.get_grid_show_modloader();
+            updated.appearance.disable_special_effects = win.get_disable_special_effects();
+            updated.appearance.wallpaper_opacity = win
+                .get_wallpaper_opacity_text()
+                .trim()
+                .parse::<u32>()
+                .unwrap_or(100)
+                .min(100);
             updated.general.sort_by = InstanceSortBy::from_index(win.get_grid_sort_by());
 
             // Minecraft — Console
@@ -2838,7 +3406,22 @@ fn wire_settings_callbacks(
                 return;
             }
 
+            // Persiste atomicamente em disco ANTES de confirmar sucesso ou fechar a janela.
+            if let Err(err) = svc.rt.block_on(save_config(&svc.paths, &updated)) {
+                win.set_error_message(SharedString::from(format!(
+                    "Failed to save settings: {err}"
+                )));
+                return;
+            }
+
+            svc.download_manager.apply_task_settings(
+                updated.tasks.concurrent_download_limit as usize,
+                updated.tasks.retry_limit,
+                updated.tasks.http_timeout_secs as u64,
+            );
+
             win.set_error_message(SharedString::new());
+            win.set_has_unsaved_changes(false);
             let lang = updated.language.clone();
             if let Ok(mut guard) = svc.state.lock() {
                 guard.config = updated.clone();
@@ -2848,28 +3431,25 @@ fn wire_settings_callbacks(
                 apply_grid_appearance(&main, &updated);
                 let sel = updated.last_selected_instance.clone();
                 refresh_main_ui(&main, &svc.state, sel.as_deref());
+                apply_main_status(&main, "Settings saved.");
             }
             if let Some(cw) = console_weak.upgrade() {
                 apply_console_appearance(&cw, &updated);
             }
-
-            let paths = svc.paths.clone();
-            let main_weak = main_weak.clone();
-            svc.rt.spawn(async move {
-                if let Err(err) = save_config(&paths, &updated).await {
-                    set_status(&main_weak, format!("Failed to save settings: {err}"));
-                } else {
-                    set_status(&main_weak, "Settings saved.");
-                }
-            });
-        });
+            if close_on_success {
+                let _ = win.hide();
+            }
+        };
+        let persist_apply = persist_global_settings.clone();
+        settings_window.on_save_clicked(move || persist_apply(false));
+        settings_window.on_ok_clicked(move || persist_global_settings(true));
     }
 
     {
         let settings_weak = settings_window.as_weak();
         settings_window.on_close_clicked(move || {
             if let Some(win) = settings_weak.upgrade() {
-                let _ = win.hide();
+                request_global_settings_close(&win);
             }
         });
     }
@@ -3092,7 +3672,6 @@ fn wire_edit_instance_callbacks(
     change_group_window: &Rc<ChangeGroupWindow>,
     select_java_window: &Rc<SelectJavaWindow>,
     console_window: &Rc<ConsoleWindow>,
-    manage_presets_window: &Rc<ManageJvmPresetsWindow>,
     svc: &Services,
 ) {
     // Callbacks das abas estendidas (Texture Packs, Shader Packs, Worlds, Servers)
@@ -3172,73 +3751,11 @@ fn wire_edit_instance_callbacks(
         });
     }
 
-    // JVM Argument Preset dropdown (instância)
-    {
-        let ew = edit_window.as_weak();
-        let state = svc.state.clone();
-        edit_window.on_jvm_preset_selected(move |preset_id| {
-            let Some(win) = ew.upgrade() else { return };
-            let pid = preset_id.to_string();
-            if pid == "custom" {
-                win.set_use_default_jvm_args(false);
-                win.set_jvm_preset_id(SharedString::from("custom"));
-                win.set_jvm_preset_label(SharedString::from("Custom"));
-                win.set_jvm_preset_description(SharedString::from(
-                    "Custom user-defined JVM arguments.",
-                ));
-                win.set_jvm_preset_compat(SharedString::new());
-                return;
-            }
-            let found = state
-                .lock()
-                .ok()
-                .and_then(|g| g.jvm_presets.iter().find(|p| p.id == pid).cloned());
-            if let Some(p) = found {
-                win.set_use_default_jvm_args(p.id == "default");
-                win.set_jvm_preset_id(SharedString::from(&p.id));
-                win.set_jvm_preset_label(SharedString::from(&p.name));
-                win.set_jvm_preset_description(SharedString::from(&p.description));
-                win.set_jvm_preset_compat(SharedString::from(p.compatibility_summary()));
-                win.set_jvm_args(SharedString::from(p.args_string()));
-            }
-        });
-    }
     {
         let ew = edit_window.as_weak();
         edit_window.on_jvm_args_edited(move || {
             let Some(win) = ew.upgrade() else { return };
             win.set_use_default_jvm_args(false);
-            win.set_jvm_preset_id(SharedString::from("custom"));
-            win.set_jvm_preset_label(SharedString::from("Custom"));
-        });
-    }
-    {
-        let mp_win = Rc::clone(manage_presets_window);
-        let svc = svc.clone();
-        edit_window.on_manage_jvm_presets_clicked(move || {
-            populate_manage_presets_window(&mp_win, &svc, None);
-            let _ = mp_win.show();
-        });
-    }
-    {
-        let mp_win = Rc::clone(manage_presets_window);
-        let svc = svc.clone();
-        edit_window.on_save_as_jvm_preset_clicked(move |raw_args| {
-            let dir = svc.paths.jvm_presets_dir();
-            if let Ok(created) = create_custom_preset(
-                &dir,
-                "Instance Preset",
-                "Saved from Instance Settings",
-                &raw_args,
-                8,
-            ) {
-                let presets = discover_jvm_presets(&dir);
-                if let Ok(mut g) = svc.state.lock() {
-                    g.jvm_presets = presets;
-                }
-                populate_manage_presets_window(&mp_win, &svc, Some(&created.id));
-                let _ = mp_win.show();
-            }
         });
     }
     // Detect Java (abre SelectJavaWindow mirando EditInstance)
@@ -3708,23 +4225,8 @@ fn wire_edit_instance_callbacks(
         });
     }
 
-    // Launch / Stop na barra inferior
-    {
-        let main_weak = main_window.as_weak();
-        let edit_weak = edit_window.as_weak();
-        let console_weak = console_window.as_weak();
-        let svc = svc.clone();
-        edit_window.on_launch_clicked(move || {
-            if let Some(ew) = edit_weak.upgrade() {
-                start_launch_flow(
-                    &main_weak,
-                    &console_weak,
-                    &svc,
-                    ew.get_instance_id().to_string(),
-                );
-            }
-        });
-    }
+    // Stop na barra inferior / Close com aviso de alterações não salvas
+    modpack_ui::wire_edit_modpack(main_window, edit_window, svc);
     {
         let edit_weak = edit_window.as_weak();
         let svc = svc.clone();
@@ -3738,7 +4240,7 @@ fn wire_edit_instance_callbacks(
         let edit_weak = edit_window.as_weak();
         edit_window.on_cancel_clicked(move || {
             if let Some(win) = edit_weak.upgrade() {
-                let _ = win.hide();
+                request_instance_settings_close(&win);
             }
         });
     }
@@ -3746,16 +4248,18 @@ fn wire_edit_instance_callbacks(
     {
         let main_weak = main_window.as_weak();
         let edit_weak = edit_window.as_weak();
+        let console_weak = console_window.as_weak();
+        let launch_svc = svc.clone();
         let svc = svc.clone();
-        edit_window.on_save_clicked(move || {
+        let persist_edit_settings = move |close_on_success: bool| -> bool {
             let Some(win) = edit_weak.upgrade() else {
-                return;
+                return false;
             };
             let id = win.get_instance_id().to_string();
             let name = win.get_instance_name().to_string();
             if let Err(err) = validate_instance_name(&name) {
                 win.set_error_message(SharedString::from(err.to_string()));
-                return;
+                return false;
             }
 
             let group_id = {
@@ -3772,13 +4276,13 @@ fn wire_edit_instance_callbacks(
             if win.get_override_memory() {
                 let (Some(mn), Some(mx)) = (min_mem, max_mem) else {
                     win.set_error_message(SharedString::from("Invalid memory values."));
-                    return;
+                    return false;
                 };
                 if mn < 128 || mx < mn {
                     win.set_error_message(SharedString::from(
                         "Minimum RAM must be at least 128 MiB and not exceed maximum RAM.",
                     ));
-                    return;
+                    return false;
                 }
             }
 
@@ -3787,13 +4291,13 @@ fn wire_edit_instance_callbacks(
             if win.get_override_window() && win.get_use_custom_resolution() {
                 let (Some(w), Some(h)) = (win_w, win_h) else {
                     win.set_error_message(SharedString::from("Invalid window dimensions."));
-                    return;
+                    return false;
                 };
                 if w < 320 || h < 240 {
                     win.set_error_message(SharedString::from(
                         "Window resolution must be at least 320x240.",
                     ));
-                    return;
+                    return false;
                 }
             }
 
@@ -3811,8 +4315,7 @@ fn wire_edit_instance_callbacks(
                 min_memory_mb: min_mem,
                 max_memory_mb: max_mem,
                 override_jvm_args: win.get_override_jvm_args(),
-                use_default_jvm_args: Some(win.get_jvm_preset_id().as_str() == "default"),
-                jvm_preset_id: Some(win.get_jvm_preset_id().to_string()),
+                use_default_jvm_args: Some(win.get_use_default_jvm_args()),
                 jvm_args: Some(win.get_jvm_args().trim().to_string()),
                 override_window: win.get_override_window(),
                 window_width: win_w,
@@ -3838,46 +4341,72 @@ fn wire_edit_instance_callbacks(
             };
 
             win.set_error_message(SharedString::new());
-            let main_weak = main_weak.clone();
-            let edit_weak = edit_weak.clone();
-            let svc = svc.clone();
-
-            svc.rt.spawn(async move {
-                match svc
-                    .instance_manager
-                    .update_instance_settings(&id, &name, group_id, overrides)
-                    .await
-                {
-                    Ok(updated) => {
-                        if let Ok(mut guard) = svc.state.lock() {
-                            if let Some(item) = guard.instances.iter_mut().find(|i| i.id == id) {
-                                *item = updated.clone();
-                            }
+            let persist_edit = {
+                let id = id.clone();
+                let name = name.clone();
+                let svc = svc.clone();
+                svc.rt.block_on(
+                    svc.instance_manager
+                        .update_instance_settings(&id, &name, group_id, overrides),
+                )
+            };
+            match persist_edit {
+                Ok(updated) => {
+                    if let Ok(mut guard) = svc.state.lock() {
+                        if let Some(item) = guard.instances.iter_mut().find(|i| i.id == id) {
+                            *item = updated.clone();
                         }
-                        let state = svc.state.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(ew) = edit_weak.upgrade() {
-                                ew.set_error_message(SharedString::new());
-                            }
-                            if let Some(main) = main_weak.upgrade() {
-                                refresh_main_ui(&main, &state, Some(&updated.id));
-                                main.set_status_text(SharedString::from(format!(
-                                    "Saved settings for '{}'",
-                                    updated.name
-                                )));
-                            }
-                        });
                     }
-                    Err(err) => {
-                        let msg = err.to_string();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(ew) = edit_weak.upgrade() {
-                                ew.set_error_message(SharedString::from(msg));
-                            }
-                        });
+                    win.set_error_message(SharedString::new());
+                    win.set_has_unsaved_changes(false);
+                    if let Some(main) = main_weak.upgrade() {
+                        refresh_main_ui(&main, &svc.state, Some(&updated.id));
+                        apply_main_status(&main, format!("Saved settings for '{}'", updated.name));
                     }
+                    if close_on_success {
+                        let _ = win.hide();
+                    }
+                    true
                 }
-            });
+                Err(err) => {
+                    win.set_error_message(SharedString::from(err.to_string()));
+                    false
+                }
+            }
+        };
+        let apply_edit = persist_edit_settings.clone();
+        edit_window.on_save_clicked(move || {
+            let _ = apply_edit(false);
+        });
+        let ok_edit = persist_edit_settings.clone();
+        edit_window.on_ok_clicked(move || {
+            let _ = ok_edit(true);
+        });
+
+        let launch_edit_weak = edit_window.as_weak();
+        let launch_main_weak = main_window.as_weak();
+        let launch_console_weak = console_weak;
+        edit_window.on_launch_clicked(move || {
+            let Some(win) = launch_edit_weak.upgrade() else {
+                return;
+            };
+            let inst_id = win.get_instance_id().to_string();
+            if inst_id.is_empty() {
+                return;
+            }
+            if win.get_has_unsaved_changes() {
+                if !persist_edit_settings(true) {
+                    return;
+                }
+            } else {
+                let _ = win.hide();
+            }
+            start_launch_flow(
+                &launch_main_weak,
+                &launch_console_weak,
+                &launch_svc,
+                inst_id,
+            );
         });
     }
 }
@@ -3903,6 +4432,7 @@ fn wire_console_callbacks(
     }
 
     {
+        let cw = console_window.as_weak();
         let state = svc.state.clone();
         console_window.on_copy_log_clicked(move || {
             let text = state
@@ -3913,8 +4443,10 @@ fn wire_console_callbacks(
                     g.console_buffers.get(id).map(|b| b.to_plain_text())
                 })
                 .unwrap_or_default();
-            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                let _ = clipboard.set_text(text);
+            if copy_text_to_clipboard(&text) {
+                if let Some(win) = cw.upgrade() {
+                    win.set_copied_feedback(true);
+                }
             }
         });
     }
@@ -3953,6 +4485,7 @@ fn wire_console_callbacks(
                     if let Ok(inst) = im.find_by_id(&id).await {
                         let logs_dir = paths.instance_game_dir(&inst.dir_name).join("logs");
                         let _ = tokio::task::spawn_blocking(move || {
+                            let _ = std::fs::create_dir_all(&logs_dir);
                             let _ = open_in_file_manager(&logs_dir);
                         })
                         .await;
@@ -3966,27 +4499,14 @@ fn wire_console_callbacks(
         let main_weak = main_window.as_weak();
         let svc = svc.clone();
         console_window.on_stop_game_clicked(move || {
-            let (id_opt, confirm, name) = svc
+            let id_opt = svc
                 .state
                 .lock()
                 .ok()
-                .map(|g| {
-                    let id = g.focused_console_id.clone();
-                    let nm = id
-                        .as_deref()
-                        .and_then(|iid| g.instances.iter().find(|i| i.id == iid))
-                        .map(|i| i.name.clone())
-                        .unwrap_or_else(|| "Minecraft".to_string());
-                    (id, g.config.minecraft.confirm_before_stopping, nm)
-                })
-                .unwrap_or((None, false, "Minecraft".to_string()));
+                .and_then(|g| g.focused_console_id.clone());
             if let Some(id) = id_opt {
-                if confirm {
-                    if let Some(main) = main_weak.upgrade() {
-                        main.set_stop_confirm_instance_id(SharedString::from(id));
-                        main.set_stop_confirm_instance_name(SharedString::from(name));
-                        main.set_show_stop_confirm_dialog(true);
-                    }
+                if let Some(main) = main_weak.upgrade() {
+                    main.invoke_stop_instance_clicked(SharedString::from(id));
                 } else {
                     svc.process_manager.stop_instance(&id);
                 }
@@ -4029,6 +4549,41 @@ fn start_launch_flow(
     console_weak: &Weak<ConsoleWindow>,
     svc: &Services,
     instance_id: String,
+) {
+    start_launch_flow_with_mode(
+        main_weak,
+        console_weak,
+        svc,
+        instance_id,
+        false,
+        LaunchMode::Normal,
+    );
+}
+
+fn start_launch_flow_with_options(
+    main_weak: &Weak<MainWindow>,
+    console_weak: &Weak<ConsoleWindow>,
+    svc: &Services,
+    instance_id: String,
+    skip_java_compat_check: bool,
+) {
+    start_launch_flow_with_mode(
+        main_weak,
+        console_weak,
+        svc,
+        instance_id,
+        skip_java_compat_check,
+        LaunchMode::Normal,
+    );
+}
+
+fn start_launch_flow_with_mode(
+    main_weak: &Weak<MainWindow>,
+    console_weak: &Weak<ConsoleWindow>,
+    svc: &Services,
+    instance_id: String,
+    skip_java_compat_check: bool,
+    launch_mode: LaunchMode,
 ) {
     // Nunca permite duas execuções simultâneas da mesma instância.
     if svc.process_manager.is_running(&instance_id) {
@@ -4116,6 +4671,7 @@ fn start_launch_flow(
                 tp.set_indeterminate(true);
                 tp.set_is_paused(false);
                 tp.set_is_cancelling(false);
+                tp.set_elapsed_seconds(0);
                 tp.set_is_finished(false);
                 let _ = tp.show();
             });
@@ -4301,26 +4857,79 @@ fn start_launch_flow(
             }
         };
 
-        if effective.check_java_compatibility {
-            if let Ok(probed) = probe_java_executable(&java_exec, false).await {
+        if effective.check_java_compatibility && !skip_java_compat_check {
+            let probed = probe_java_executable(&java_exec, false).await.ok();
+            if let Some(ref p) = probed {
                 if let Err(mem_err) = validate_memory_for_java_arch(
                     effective.min_memory_mb,
                     effective.max_memory_mb,
-                    &probed.arch,
+                    &p.arch,
                 ) {
                     set_status(&main_weak, format!("Launch failed: {mem_err}"));
                     return;
                 }
-                let compatible = probed.major_version == required_major
-                    || (required_major >= 17 && probed.major_version > required_major);
-                if !compatible && effective.warn_incompatible_java {
-                    prelaunch_warnings.push(format!(
-                        "Java compatibility warning: Minecraft {} expects Java {}, but '{}' is Java {}.",
-                        instance.minecraft_version,
-                        required_major,
-                        probed.path.display(),
-                        probed.major_version
-                    ));
+            }
+
+            let compat = crab_launcher::core::java::resolver::evaluate_java_compatibility(
+                &instance.minecraft_version,
+                required_major,
+                instance.modloader_spec.as_ref().map(|m| m.kind),
+                probed.as_ref(),
+            );
+            match compat {
+                crab_launcher::core::java::resolver::JavaCompatibilityStatus::Compatible => {}
+                crab_launcher::core::java::resolver::JavaCompatibilityStatus::Incompatible {
+                    required_major: rec_major,
+                    recommended_label,
+                    reason,
+                }
+                | crab_launcher::core::java::resolver::JavaCompatibilityStatus::Unknown {
+                    required_major: rec_major,
+                    recommended_label,
+                    reason,
+                } => {
+                    let cur_java_label = probed
+                        .as_ref()
+                        .map(|p| {
+                            format!(
+                                "Java {} ({}) — {}",
+                                p.major_version,
+                                p.version,
+                                p.path.display()
+                            )
+                        })
+                        .unwrap_or_else(|| format!("Unknown ({})", java_exec.display()));
+                    let modloader_lbl = instance
+                        .modloader_spec
+                        .as_ref()
+                        .map(|m| format!("{} {}", m.kind.short_name(), m.version))
+                        .unwrap_or_else(|| "Vanilla".to_string());
+                    let inst_id_c = instance.id.clone();
+                    let inst_name_c = instance.name.clone();
+                    let mc_ver_c = instance.minecraft_version.clone();
+                    let main_weak_c = main_weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        with_task_progress(|tp| {
+                            let _ = tp.hide();
+                        });
+                        JAVA_INCOMPAT_WIN.with(|cell| {
+                            if let Some(jiw) = cell.borrow().as_ref().and_then(|w| w.upgrade()) {
+                                jiw.set_instance_id(SharedString::from(inst_id_c));
+                                jiw.set_instance_name(SharedString::from(inst_name_c));
+                                jiw.set_mc_version(SharedString::from(mc_ver_c));
+                                jiw.set_modloader_label(SharedString::from(modloader_lbl));
+                                jiw.set_current_java(SharedString::from(cur_java_label));
+                                jiw.set_recommended_java(SharedString::from(recommended_label));
+                                jiw.set_recommended_major(rec_major as i32);
+                                jiw.set_reason(SharedString::from(reason));
+                                if let Some(main) = main_weak_c.upgrade() {
+                                    center_window_over(jiw.window(), main.window());
+                                }
+                                let _ = jiw.show();
+                            }
+                        });
+                    });
+                    return;
                 }
             }
         }
@@ -4336,25 +4945,68 @@ fn start_launch_flow(
             }
         }
 
-        // 4. Autenticação (Microsoft ou Offline)
-        set_status(&main_weak, "Authenticating...");
-        update_launch_step(3, "Authenticating & building launch plan...".to_string(), 0.72, true);
-        let client_id = distribution_client_id();
-        let creds = match svc
-            .account_manager
-            .resolve_launch_credentials(client_id.as_deref())
-            .await
-        {
-            Ok(c) => c,
-            Err(err) => {
-                fail_launch(&main_weak, &svc, err.to_string());
-                return;
+        // 4. Autenticação (Normal / Offline escolhido / Demo)
+        let is_demo_launch = matches!(launch_mode, LaunchMode::Demo);
+        let creds = match launch_mode {
+            LaunchMode::Normal => {
+                set_status(&main_weak, "Authenticating...");
+                update_launch_step(
+                    3,
+                    "Authenticating & building launch plan...".to_string(),
+                    0.72,
+                    true,
+                );
+                let client_id = distribution_client_id();
+                match svc
+                    .account_manager
+                    .resolve_launch_credentials(client_id.as_deref())
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(err) => {
+                        fail_launch(&main_weak, &svc, err.to_string());
+                        return;
+                    }
+                }
+            }
+            LaunchMode::Offline(offline_creds) => {
+                set_status(
+                    &main_weak,
+                    format!("Launching offline as {}...", offline_creds.username),
+                );
+                update_launch_step(
+                    3,
+                    format!("Preparing offline launch ({})...", offline_creds.username),
+                    0.72,
+                    true,
+                );
+                offline_creds
+            }
+            LaunchMode::Demo => {
+                set_status(&main_weak, "Preparing demo mode launch...");
+                update_launch_step(3, "Preparing Minecraft Demo launch...".to_string(), 0.72, true);
+                let client_id = distribution_client_id();
+                match svc
+                    .account_manager
+                    .resolve_launch_credentials(client_id.as_deref())
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(_) => LaunchCredentials {
+                        username: "Player".to_string(),
+                        uuid: offline_player_uuid("Player"),
+                        access_token: "0".to_string(),
+                        xuid: "0".to_string(),
+                        user_type: "legacy".to_string(),
+                        is_offline: true,
+                    },
+                }
             }
         };
 
         // 5. Constrói LaunchPlan e LaunchCommand centralizado (com wrappers Linux e env)
         set_status(&main_weak, "Preparing launch...");
-        let mut plan = match build_launch_plan(
+        let mut plan = match build_launch_plan_with_options(
             &instance,
             &version_meta,
             java_exec,
@@ -4362,6 +5014,7 @@ fn start_launch_flow(
             &effective,
             &svc.paths,
             &platform,
+            is_demo_launch,
         ) {
             Ok(p) => p,
             Err(err) => {
@@ -4460,7 +5113,7 @@ fn start_launch_flow(
             });
             if let Some(main) = main_weak_start.upgrade() {
                 refresh_main_ui(&main, &state_start, Some(&id_start));
-                main.set_status_text(SharedString::from("Running."));
+                apply_main_status(&main, "Running.");
                 match launch_behavior {
                     LaunchBehavior::KeepOpen => {}
                     LaunchBehavior::Minimize => main.window().set_minimized(true),
@@ -4572,7 +5225,7 @@ fn start_launch_flow(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(main) = mw.upgrade() {
                                 refresh_main_ui(&main, &st, Some(&instance_id));
-                                main.set_status_text(SharedString::from(&msg));
+                                apply_main_status(&main, &msg);
                                 if should_restore {
                                     match launch_behavior {
                                         LaunchBehavior::Minimize => {
@@ -4621,7 +5274,7 @@ fn start_launch_flow(
                 if let Some(main) = mw.upgrade() {
                     main.window().set_minimized(false);
                     let _ = main.show();
-                    main.set_status_text(SharedString::from(err_text));
+                    apply_main_status(&main, err_text);
                 }
             });
         }
@@ -4685,6 +5338,7 @@ fn start_instance_installation_with_loader(
             tp.set_indeterminate(true);
             tp.set_is_paused(false);
             tp.set_is_cancelling(false);
+            tp.set_elapsed_seconds(0);
             tp.set_is_finished(false);
             let _ = tp.show();
         });
@@ -4901,7 +5555,7 @@ fn start_instance_installation_with_loader(
                 if !any_active {
                     win.set_install_active(false);
                 }
-                win.set_status_text(SharedString::from(status_msg));
+                apply_main_status(&win, status_msg);
             }
         });
     });
@@ -4957,7 +5611,7 @@ fn trigger_manifest_fetch(
                                 "Using cached Minecraft versions (offline)"
                             }
                         };
-                        main.set_status_text(SharedString::from(status));
+                        apply_main_status(&main, status);
                     }
                 });
             }
@@ -4969,9 +5623,7 @@ fn trigger_manifest_fetch(
                         win.set_error_message(SharedString::from(msg));
                     }
                     if let Some(main) = main_weak.upgrade() {
-                        main.set_status_text(SharedString::from(
-                            "Failed to fetch Minecraft versions",
-                        ));
+                        apply_main_status(&main, "Failed to fetch Minecraft versions");
                     }
                 });
             }
@@ -5037,7 +5689,10 @@ fn refresh_filtered_versions(
 
     add_win.set_versions(ModelRc::from(Rc::new(VecModel::from(filtered))));
     add_win.set_selected_version_id(SharedString::from(&next_selected));
-    if !add_win.get_user_edited_name() && !next_selected.is_empty() {
+    if add_win.get_active_source() == 0
+        && !add_win.get_user_edited_name()
+        && !next_selected.is_empty()
+    {
         add_win.set_instance_name(SharedString::from(&next_selected));
     }
 }
@@ -5350,6 +6005,8 @@ fn apply_capabilities_to_settings(win: &SettingsWindow, caps: &SystemCapabilitie
 }
 
 fn populate_settings_window(win: &SettingsWindow, state: &Arc<Mutex<AppState>>) {
+    win.set_has_unsaved_changes(false);
+    win.set_error_message(SharedString::new());
     if let Ok(guard) = state.lock() {
         let cfg = &guard.config;
         win.set_language(SharedString::from(&cfg.language));
@@ -5460,35 +6117,16 @@ fn populate_settings_window(win: &SettingsWindow, state: &Arc<Mutex<AppState>>) 
         win.set_use_default_jvm_args(cfg.minecraft.use_default_jvm_args);
         win.set_jvm_args(SharedString::from(&cfg.minecraft.jvm_args));
 
-        let (sel_major, sel_arch) = guard
-            .java_runtimes
-            .iter()
-            .max_by_key(|r| r.major_version)
-            .map(|r| (r.major_version, r.arch.as_str()))
-            .unwrap_or((21, std::env::consts::ARCH));
-        let jvm_opts = build_jvm_preset_options(&guard.jvm_presets, sel_major, sel_arch);
-        win.set_jvm_preset_options(ModelRc::from(Rc::new(VecModel::from(jvm_opts))));
-        let pid = &cfg.minecraft.jvm_preset_id;
-        if let Some(p) = guard.jvm_presets.iter().find(|p| &p.id == pid) {
-            win.set_jvm_preset_id(SharedString::from(&p.id));
-            win.set_jvm_preset_label(SharedString::from(&p.name));
-            win.set_jvm_preset_description(SharedString::from(&p.description));
-            win.set_jvm_preset_compat(SharedString::from(p.compatibility_summary()));
-        } else {
-            win.set_jvm_preset_id(SharedString::from("custom"));
-            win.set_jvm_preset_label(SharedString::from("Custom"));
-            win.set_jvm_preset_description(SharedString::from(
-                "Custom user-defined JVM arguments.",
-            ));
-            win.set_jvm_preset_compat(SharedString::new());
-        }
-
-        // Appearance — Instance Grid
+        // Appearance — Other (Instance Grid + Visual Effects & Wallpaper)
         win.set_grid_icon_size(cfg.appearance.icon_size.to_index());
         win.set_grid_spacing(cfg.appearance.grid_spacing.to_index());
         win.set_grid_show_name(cfg.appearance.show_instance_name);
         win.set_grid_show_version(cfg.appearance.show_mc_version);
         win.set_grid_show_modloader(cfg.appearance.show_modloader_badge);
+        win.set_disable_special_effects(cfg.appearance.disable_special_effects);
+        win.set_wallpaper_opacity_text(SharedString::from(
+            cfg.appearance.wallpaper_opacity.min(100).to_string(),
+        ));
         win.set_grid_sort_by(cfg.general.sort_by.to_index());
         let conflicts = detect_conflicting_jvm_args(&cfg.minecraft.jvm_args);
         win.set_jvm_conflict_warning(SharedString::from(if conflicts.is_empty() {
@@ -5755,6 +6393,8 @@ fn populate_edit_instance_window(
     svc: &Services,
     instance_id: &str,
 ) -> bool {
+    win.set_has_unsaved_changes(false);
+    win.set_error_message(SharedString::new());
     let opts = build_group_options(&svc.state);
     let Ok(guard) = svc.state.lock() else {
         return false;
@@ -5779,11 +6419,8 @@ fn populate_edit_instance_window(
     win.set_instance_icon(inst_icon_img);
     win.set_has_instance_icon(has_inst_icon);
     refresh_edit_resources_ui(win, svc, &inst);
+    modpack_ui::populate_edit_modpack_tab(win, &inst);
 
-    let version_json_path = svc.paths.version_metadata_file(&inst.minecraft_version);
-    let version_meta: Option<VersionMetadata> = std::fs::read(&version_json_path)
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok());
     // Popula componentes persistidos em `<instance_dir>/components.json` (respeitando ordem e customizações)
     let inst_dir = svc.paths.instance_dir(&inst.dir_name);
     let comp_manifest = ComponentManifest::load_or_init(&inst_dir, &inst);
@@ -5840,8 +6477,27 @@ fn populate_edit_instance_window(
                     ));
                     Image::load_from_path(&p).ok()
                 })
+                .or_else(|| {
+                    m.icon_bytes
+                        .as_deref()
+                        .and_then(modpack_ui::decode_slint_image)
+                })
                 .map(|img| (img, true))
                 .unwrap_or_else(|| (Image::default(), false));
+            let name = if m.warning.as_deref() == Some("Unknown mod metadata") {
+                rec.map(|r| r.title.clone())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| m.name.clone())
+            } else {
+                m.name.clone()
+            };
+            let version = if m.version == "Unknown" {
+                rec.map(|r| r.version_number.clone())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| m.version.clone())
+            } else {
+                m.version.clone()
+            };
             let author = rec
                 .map(|r| r.author.clone())
                 .filter(|s| !s.is_empty())
@@ -5850,10 +6506,15 @@ fn populate_edit_instance_window(
                 .map(|r| r.description.clone())
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| m.description.clone());
+            let warning = if rec.is_some() && m.warning.as_deref() == Some("Unknown mod metadata") {
+                String::new()
+            } else {
+                m.warning.unwrap_or_default()
+            };
             LocalModItem {
                 file_name: SharedString::from(m.file_name),
-                name: SharedString::from(m.name),
-                version: SharedString::from(m.version),
+                name: SharedString::from(name),
+                version: SharedString::from(version),
                 loader: SharedString::from(m.loader.map(|l| l.short_name()).unwrap_or("Unknown")),
                 last_modified: SharedString::from(last_modified),
                 provider: SharedString::from(provider),
@@ -5864,7 +6525,7 @@ fn populate_edit_instance_window(
                 has_icon,
                 enabled: m.enabled,
                 selected: false,
-                warning: SharedString::from(m.warning.unwrap_or_default()),
+                warning: SharedString::from(warning),
             }
         })
         .collect();
@@ -5973,29 +6634,6 @@ fn populate_edit_instance_window(
     } else {
         &global_mc.jvm_args
     }));
-    let req_major = version_meta.as_ref().map(required_java_major).unwrap_or(17);
-    if let Ok(g) = svc.state.lock() {
-        let jvm_opts = build_jvm_preset_options(&g.jvm_presets, req_major, std::env::consts::ARCH);
-        win.set_jvm_preset_options(ModelRc::from(Rc::new(VecModel::from(jvm_opts))));
-        if let Some(p) = g
-            .jvm_presets
-            .iter()
-            .find(|p| p.id == effective.jvm_preset_id)
-        {
-            win.set_jvm_preset_id(SharedString::from(&p.id));
-            win.set_jvm_preset_label(SharedString::from(&p.name));
-            win.set_jvm_preset_description(SharedString::from(&p.description));
-            win.set_jvm_preset_compat(SharedString::from(p.compatibility_summary()));
-        } else {
-            win.set_jvm_preset_id(SharedString::from("custom"));
-            win.set_jvm_preset_label(SharedString::from("Custom"));
-            win.set_jvm_preset_description(SharedString::from(
-                "Custom user-defined JVM arguments.",
-            ));
-            win.set_jvm_preset_compat(SharedString::new());
-        }
-    }
-
     // Console
     win.set_override_console(inst.overrides.override_console);
     win.set_show_console_on_launch(effective.show_console_on_launch);
@@ -6123,15 +6761,18 @@ fn populate_launch_summary_window(
 
 fn refresh_console_window(win: &ConsoleWindow, state: &Arc<Mutex<AppState>>, instance_id: &str) {
     let query = win.get_search_query().to_string().to_lowercase();
+    let icons_dir = AppPaths::resolve().map(|p| p.icons_dir()).ok();
     if let Ok(guard) = state.lock() {
-        let name = guard
-            .instances
-            .iter()
-            .find(|i| i.id == instance_id)
-            .map(|i| i.name.as_str())
-            .unwrap_or("Minecraft");
+        let inst_opt = guard.instances.iter().find(|i| i.id == instance_id);
+        let name = inst_opt.map(|i| i.name.as_str()).unwrap_or("Minecraft");
+        let (inst_icon, has_icon) = load_instance_icon_image(
+            inst_opt.and_then(|i| i.icon_key.as_deref()),
+            icons_dir.as_deref(),
+        );
         let is_running = guard.running_instances.contains(instance_id);
         win.set_instance_name(SharedString::from(name));
+        win.set_instance_icon(inst_icon);
+        win.set_has_instance_icon(has_icon);
         win.set_is_running(is_running);
         win.set_process_status(SharedString::from(if is_running {
             "Running"
@@ -6163,7 +6804,7 @@ fn set_status(main_weak: &Weak<MainWindow>, message: impl Into<String>) {
     let main_weak = main_weak.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(win) = main_weak.upgrade() {
-            win.set_status_text(SharedString::from(msg));
+            apply_main_status(&win, msg);
         }
     });
 }
@@ -6274,6 +6915,7 @@ fn wire_install_java_callbacks(
                         tp.set_indeterminate(true);
                         tp.set_is_paused(false);
                         tp.set_is_cancelling(false);
+                        tp.set_elapsed_seconds(0);
                         tp.set_is_finished(false);
                         let _ = tp.show();
                     });
@@ -6657,6 +7299,7 @@ fn wire_install_loader_callbacks(
                         tp.set_indeterminate(true);
                         tp.set_is_paused(false);
                         tp.set_is_cancelling(false);
+                        tp.set_elapsed_seconds(0);
                         tp.set_is_finished(false);
                         let _ = tp.show();
                     });
@@ -6763,11 +7406,10 @@ fn wire_install_loader_callbacks(
                             }
                             if let Some(main) = main_weak.upgrade() {
                                 refresh_main_ui(&main, &svc.state, Some(&instance_id));
-                                main.set_status_text(SharedString::from(format!(
-                                    "Installed {} {}.",
-                                    spec.kind.label(),
-                                    spec.version
-                                )));
+                                apply_main_status(
+                                    &main,
+                                    format!("Installed {} {}.", spec.kind.label(), spec.version),
+                                );
                             }
                         });
                     }
@@ -6882,16 +7524,22 @@ fn populate_change_group_window(
     state: &Arc<Mutex<AppState>>,
     instance_id: &str,
 ) -> bool {
+    if !instance_id.is_empty() {
+        win.set_manage_mode(false);
+    }
     let query = win.get_search_query().to_string().to_lowercase();
     let Ok(guard) = state.lock() else {
         return false;
     };
-    let Some(inst) = guard.instances.iter().find(|i| i.id == instance_id) else {
+    let inst = guard.instances.iter().find(|i| i.id == instance_id);
+    if inst.is_none() && !win.get_manage_mode() {
         return false;
-    };
+    }
 
     let mut opts = Vec::new();
-    if query.is_empty() || "no group".contains(&query) || "ungrouped".contains(&query) {
+    if !win.get_manage_mode()
+        && (query.is_empty() || "no group".contains(&query) || "ungrouped".contains(&query))
+    {
         opts.push(GroupOption {
             id: SharedString::new(),
             name: SharedString::from("No Group"),
@@ -6906,9 +7554,11 @@ fn populate_change_group_window(
         }
     }
 
-    win.set_instance_id(SharedString::from(&inst.id));
-    win.set_instance_name(SharedString::from(&inst.name));
-    win.set_selected_group_id(SharedString::from(inst.group_id.as_deref().unwrap_or("")));
+    win.set_instance_id(SharedString::from(instance_id));
+    if let Some(inst) = inst {
+        win.set_instance_name(SharedString::from(&inst.name));
+        win.set_selected_group_id(SharedString::from(inst.group_id.as_deref().unwrap_or("")));
+    }
     win.set_groups(ModelRc::from(Rc::new(VecModel::from(opts))));
     win.set_error_message(SharedString::new());
     true
@@ -7122,6 +7772,9 @@ fn apply_grid_appearance(win: &MainWindow, cfg: &LauncherConfig) {
     win.set_grid_show_name(cfg.appearance.show_instance_name);
     win.set_grid_show_version(cfg.appearance.show_mc_version);
     win.set_grid_show_modloader(cfg.appearance.show_modloader_badge);
+    let t = win.global::<Theme>();
+    t.set_disable_special_effects(cfg.appearance.disable_special_effects);
+    t.set_wallpaper_opacity((cfg.appearance.wallpaper_opacity.min(100) as f32) / 100.0);
 }
 
 fn load_instance_icon_image(
@@ -7412,293 +8065,6 @@ fn memory_warning_text(max_mb: u32, total_mib: Option<u64>, avail_mib: Option<u6
     String::new()
 }
 
-fn build_jvm_preset_options(
-    presets: &[JvmPreset],
-    java_major: u32,
-    arch: &str,
-) -> Vec<DropdownOption> {
-    let mut opts: Vec<DropdownOption> = presets
-        .iter()
-        .map(|p| {
-            let compat = p.check_compatibility(java_major, arch);
-            let detail = match &compat {
-                Ok(()) => {
-                    if p.is_official {
-                        "Official".to_string()
-                    } else {
-                        "Custom".to_string()
-                    }
-                }
-                Err(_) => format!("Requires Java {}+", p.min_java_major),
-            };
-            DropdownOption {
-                id: SharedString::from(&p.id),
-                label: SharedString::from(&p.name),
-                detail: SharedString::from(detail),
-                enabled: compat.is_ok(),
-                icon: Image::default(),
-                has_icon: false,
-            }
-        })
-        .collect();
-    opts.push(DropdownOption {
-        id: "custom".into(),
-        label: "Custom".into(),
-        detail: "Editable".into(),
-        enabled: true,
-        icon: Image::default(),
-        has_icon: false,
-    });
-    opts
-}
-
-fn populate_manage_presets_window(
-    win: &ManageJvmPresetsWindow,
-    svc: &Services,
-    select_id: Option<&str>,
-) {
-    let presets = discover_jvm_presets(&svc.paths.jvm_presets_dir());
-    if let Ok(mut g) = svc.state.lock() {
-        g.jvm_presets = presets.clone();
-    }
-    let items: Vec<JvmPresetListItem> = presets
-        .iter()
-        .map(|p| JvmPresetListItem {
-            id: SharedString::from(&p.id),
-            name: SharedString::from(&p.name),
-            description: SharedString::from(&p.description),
-            args: SharedString::from(p.args_string()),
-            min_java: p.min_java_major as i32,
-            compatibility: SharedString::from(p.compatibility_summary()),
-            is_official: p.is_official,
-        })
-        .collect();
-    win.set_presets(ModelRc::from(Rc::new(VecModel::from(items))));
-    let target_id = select_id
-        .map(str::to_string)
-        .or_else(|| presets.first().map(|p| p.id.clone()))
-        .unwrap_or_default();
-    if let Some(p) = presets.iter().find(|p| p.id == target_id) {
-        win.set_selected_id(SharedString::from(&p.id));
-        win.set_selected_is_official(p.is_official);
-        win.set_edit_name(SharedString::from(&p.name));
-        win.set_edit_description(SharedString::from(&p.description));
-        win.set_edit_args(SharedString::from(p.args_string()));
-        win.set_edit_min_java(SharedString::from(p.min_java_major.to_string()));
-    }
-    win.set_error_message(SharedString::new());
-}
-
-fn wire_manage_jvm_presets_callbacks(
-    settings_window: &Rc<SettingsWindow>,
-    edit_window: &Rc<EditInstanceWindow>,
-    mp_window: &Rc<ManageJvmPresetsWindow>,
-    svc: &Services,
-) {
-    {
-        let mp_weak = mp_window.as_weak();
-        let state = svc.state.clone();
-        mp_window.on_select_preset(move |id| {
-            let pid = id.to_string();
-            let found = state
-                .lock()
-                .ok()
-                .and_then(|g| g.jvm_presets.iter().find(|p| p.id == pid).cloned());
-            if let (Some(w), Some(p)) = (mp_weak.upgrade(), found) {
-                w.set_selected_is_official(p.is_official);
-                w.set_edit_name(SharedString::from(&p.name));
-                w.set_edit_description(SharedString::from(&p.description));
-                w.set_edit_args(SharedString::from(p.args_string()));
-                w.set_edit_min_java(SharedString::from(p.min_java_major.to_string()));
-                w.set_error_message(SharedString::new());
-            }
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        let svc = svc.clone();
-        mp_window.on_create_preset_clicked(move || {
-            let dir = svc.paths.jvm_presets_dir();
-            if let Some(w) = mp_weak.upgrade() {
-                match create_custom_preset(&dir, "New Custom Preset", "Custom JVM arguments", "", 8)
-                {
-                    Ok(created) => {
-                        populate_manage_presets_window(&w, &svc, Some(&created.id));
-                        w.set_status_message(SharedString::from("Created custom preset."));
-                    }
-                    Err(err) => w.set_error_message(SharedString::from(err.to_string())),
-                }
-            }
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        let sw_weak = settings_window.as_weak();
-        let ew_weak = edit_window.as_weak();
-        let svc = svc.clone();
-        mp_window.on_save_preset_clicked(move |id, name, desc, args, min_java_s| {
-            let Some(w) = mp_weak.upgrade() else { return };
-            let min_java: u32 = match min_java_s.trim().parse() {
-                Ok(v) => v,
-                Err(_) => {
-                    w.set_error_message(SharedString::from("Invalid minimum Java version."));
-                    return;
-                }
-            };
-            let preset = JvmPreset {
-                schema_version: 1,
-                id: id.to_string(),
-                name: name.trim().to_string(),
-                description: desc.trim().to_string(),
-                args: args.split_whitespace().map(str::to_string).collect(),
-                min_java_major: min_java,
-                max_java_major: None,
-                supported_arches: Vec::new(),
-                source: "Custom".to_string(),
-                version: "1.0.0".to_string(),
-                is_official: false,
-            };
-            match save_custom_preset(&svc.paths.jvm_presets_dir(), &preset) {
-                Ok(_) => {
-                    populate_manage_presets_window(&w, &svc, Some(&preset.id));
-                    w.set_status_message(SharedString::from("Saved preset."));
-                    if let Some(sw) = sw_weak.upgrade() {
-                        populate_settings_window(&sw, &svc.state);
-                    }
-                    if let Some(ew) = ew_weak.upgrade() {
-                        let iid = ew.get_instance_id().to_string();
-                        if !iid.is_empty() {
-                            populate_edit_instance_window(&ew, &svc, &iid);
-                        }
-                    }
-                }
-                Err(err) => w.set_error_message(SharedString::from(err.to_string())),
-            }
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        let svc = svc.clone();
-        mp_window.on_duplicate_preset_clicked(move |id| {
-            let Some(w) = mp_weak.upgrade() else { return };
-            let src = svc
-                .state
-                .lock()
-                .ok()
-                .and_then(|g| g.jvm_presets.iter().find(|p| p.id == id.as_str()).cloned());
-            if let Some(s) = src {
-                match duplicate_preset(&svc.paths.jvm_presets_dir(), &s) {
-                    Ok(dup) => {
-                        populate_manage_presets_window(&w, &svc, Some(&dup.id));
-                        w.set_status_message(SharedString::from("Duplicated preset."));
-                    }
-                    Err(err) => w.set_error_message(SharedString::from(err.to_string())),
-                }
-            }
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        let svc = svc.clone();
-        mp_window.on_delete_preset_clicked(move |id| {
-            let Some(w) = mp_weak.upgrade() else { return };
-            match delete_custom_preset(&svc.paths.jvm_presets_dir(), &id) {
-                Ok(()) => {
-                    populate_manage_presets_window(&w, &svc, None);
-                    w.set_status_message(SharedString::from("Deleted custom preset."));
-                }
-                Err(err) => w.set_error_message(SharedString::from(err.to_string())),
-            }
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        let svc = svc.clone();
-        mp_window.on_import_preset_clicked(move || {
-            let mp_weak = mp_weak.clone();
-            let svc = svc.clone();
-            let rt = svc.rt.clone();
-            rt.spawn_blocking(move || match pick_toml_file() {
-                Ok(Some(path)) => {
-                    let res = import_custom_preset(&svc.paths.jvm_presets_dir(), &path);
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = mp_weak.upgrade() {
-                            match res {
-                                Ok(imported) => {
-                                    populate_manage_presets_window(&w, &svc, Some(&imported.id));
-                                    w.set_status_message(SharedString::from(
-                                        "Imported JVM preset.",
-                                    ));
-                                }
-                                Err(err) => {
-                                    w.set_error_message(SharedString::from(err.to_string()));
-                                }
-                            }
-                        }
-                    });
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    let msg = err.to_string();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = mp_weak.upgrade() {
-                            w.set_error_message(SharedString::from(msg));
-                        }
-                    });
-                }
-            });
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        let svc = svc.clone();
-        mp_window.on_export_preset_clicked(move |id| {
-            let found = svc
-                .state
-                .lock()
-                .ok()
-                .and_then(|g| g.jvm_presets.iter().find(|p| p.id == id.as_str()).cloned());
-            let Some(preset) = found else { return };
-            let mp_weak = mp_weak.clone();
-            svc.rt
-                .spawn_blocking(move || match save_toml_file(&preset.id) {
-                    Ok(Some(dest)) => {
-                        let res = export_preset(&preset, &dest);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = mp_weak.upgrade() {
-                                match res {
-                                    Ok(()) => w.set_status_message(SharedString::from(
-                                        "Exported JVM preset.",
-                                    )),
-                                    Err(err) => {
-                                        w.set_error_message(SharedString::from(err.to_string()));
-                                    }
-                                }
-                            }
-                        });
-                    }
-                    Ok(None) => {}
-                    Err(err) => {
-                        let msg = err.to_string();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = mp_weak.upgrade() {
-                                w.set_error_message(SharedString::from(msg));
-                            }
-                        });
-                    }
-                });
-        });
-    }
-    {
-        let mp_weak = mp_window.as_weak();
-        mp_window.on_close_clicked(move || {
-            if let Some(w) = mp_weak.upgrade() {
-                let _ = w.hide();
-            }
-        });
-    }
-}
-
 fn populate_select_icon_window(win: &SelectIconWindow, svc: &Services, instance_id: &str) -> bool {
     let inst_info = svc.state.lock().ok().and_then(|g| {
         g.instances
@@ -7753,6 +8119,16 @@ fn populate_select_icon_window_for_key(
     win.set_selected_key(SharedString::from(current_key));
     win.set_icons(ModelRc::from(Rc::new(VecModel::from(items))));
     win.set_error_message(SharedString::new());
+}
+
+fn refresh_icon_selector(win: &SelectIconWindow, svc: &Services) {
+    populate_select_icon_window_for_key(
+        win,
+        svc,
+        &win.get_instance_id(),
+        &win.get_instance_name(),
+        &win.get_selected_key(),
+    );
 }
 
 fn modloader_kind_from_add_idx(idx: i32) -> Option<ModloaderKind> {
@@ -7897,8 +8273,7 @@ fn wire_select_icon_callbacks(
         let svc = svc.clone();
         si_window.on_search_changed(move |_| {
             if let Some(w) = si_weak.upgrade() {
-                let id = w.get_instance_id().to_string();
-                populate_select_icon_window(&w, &svc, &id);
+                refresh_icon_selector(&w, &svc);
             }
         });
     }
@@ -8091,10 +8466,7 @@ fn wire_select_icon_callbacks(
                 })
                 .unwrap_or(0);
             if let Some(w) = si_weak.upgrade() {
-                w.set_delete_target_key(SharedString::from(k));
-                w.set_delete_target_label(SharedString::from(display));
-                w.set_delete_usage_count(usage as i32);
-                w.set_show_delete_dialog(true);
+                w.invoke_request_delete_icon_dialog(k.into(), display.into(), usage as i32);
             }
         });
     }
@@ -8103,6 +8475,7 @@ fn wire_select_icon_callbacks(
     {
         let main_weak = main_window.as_weak();
         let si_weak = si_window.as_weak();
+        let add_weak = add_window.as_weak();
         let svc = svc.clone();
         si_window.on_confirm_delete_icon(move |key| {
             let k = key.to_string();
@@ -8110,25 +8483,38 @@ fn wire_select_icon_callbacks(
             let inst_id = w.get_instance_id().to_string();
             let main_weak = main_weak.clone();
             let si_weak = si_weak.clone();
+            let add_weak = add_weak.clone();
             let svc = svc.clone();
             let rt = svc.rt.clone();
             rt.spawn(async move {
                 match svc.instance_manager.delete_managed_icon(&k).await {
                     Ok(_) => {
-                        if let Ok(list) = svc.instance_manager.list_instances().await {
-                            if let Ok(mut g) = svc.state.lock() {
-                                g.instances = list;
+                        if let Ok(mut g) = svc.state.lock() {
+                            for instance in &mut g.instances {
+                                if instance.icon_key.as_deref() == Some(k.as_str()) {
+                                    instance.icon_key = None;
+                                }
                             }
                         }
                         let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(add) = add_weak.upgrade() {
+                                if add.get_selected_icon_key().as_str() == k {
+                                    add.set_selected_icon_key("".into());
+                                    add.set_has_selected_icon(false);
+                                }
+                            }
                             if let Some(sw) = si_weak.upgrade() {
                                 if sw.get_selected_key().as_str() == k {
                                     sw.set_selected_key(SharedString::new());
                                 }
-                                populate_select_icon_window(&sw, &svc, &inst_id);
+                                refresh_icon_selector(&sw, &svc);
                             }
                             if let Some(main) = main_weak.upgrade() {
-                                refresh_main_ui(&main, &svc.state, Some(&inst_id));
+                                refresh_main_ui(
+                                    &main,
+                                    &svc.state,
+                                    (!inst_id.is_empty()).then_some(inst_id.as_str()),
+                                );
                             }
                         });
                     }
@@ -8150,16 +8536,20 @@ fn wire_select_icon_callbacks(
         let si_weak = si_window.as_weak();
         let svc = svc.clone();
         si_window.on_rename_icon_confirmed(move |key, new_name| {
-            let Some(w) = si_weak.upgrade() else { return };
-            let inst_id = w.get_instance_id().to_string();
-            match svc.instance_manager.rename_managed_icon(&key, &new_name) {
-                Ok(()) => {
-                    populate_select_icon_window(&w, &svc, &inst_id);
-                }
-                Err(err) => {
-                    w.set_error_message(SharedString::from(err.to_string()));
-                }
-            }
+            let weak = si_weak.clone();
+            let services = svc.clone();
+            svc.rt.spawn_blocking(move || {
+                let result = services
+                    .instance_manager
+                    .rename_managed_icon(&key, &new_name);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(win) = weak.upgrade() else { return };
+                    match result {
+                        Ok(()) => refresh_icon_selector(&win, &services),
+                        Err(err) => win.set_error_message(err.to_string().into()),
+                    }
+                });
+            });
         });
     }
 
@@ -11015,6 +11405,7 @@ fn wire_download_mods_callbacks(
                     tp.set_indeterminate(false);
                     tp.set_is_paused(false);
                     tp.set_is_cancelling(false);
+                    tp.set_elapsed_seconds(0);
                     tp.set_is_finished(false);
                     tp.set_error_message(SharedString::new());
                     tp.set_completed_count(0);
@@ -11871,8 +12262,12 @@ fn sync_settings_icon_packs_ui(win: &SettingsWindow, svc: &Services) {
             is_builtin: p.is_builtin,
         })
         .collect();
-    win.set_active_icon_pack_id(SharedString::from(active_id));
+    win.set_active_icon_pack_id(SharedString::from(&active_id));
     win.set_icon_packs(ModelRc::from(Rc::new(VecModel::from(items))));
+    win.set_icon_pack_preview_images(icon_pack_ui::build_preview_images(
+        &active_id,
+        &svc.paths.icon_packs_dir(),
+    ));
 }
 
 fn sync_settings_accounts_ui(win: &SettingsWindow, svc: &Services) {
@@ -12066,7 +12461,69 @@ fn wire_rename_change_version_and_settings_accounts(
         let svc = svc.clone();
         rename_window.on_confirm_rename(move |id, new_name| {
             let id_str = id.to_string();
-            let name_str = new_name.to_string();
+            let name_str = new_name.trim().to_string();
+            if let Err(err) = validate_instance_name(&name_str) {
+                if let Some(w) = rw_weak.upgrade() {
+                    w.set_error_message(SharedString::from(err.to_string()));
+                }
+                return;
+            }
+
+            let (is_running, policy, old_name, old_dir) = svc
+                .state
+                .lock()
+                .ok()
+                .map(|g| {
+                    let running = g.running_instances.contains(&id_str);
+                    let pol = g.config.general.rename_folder_policy;
+                    let (oname, odir) = g
+                        .instances
+                        .iter()
+                        .find(|i| i.id == id_str)
+                        .map(|i| (i.name.clone(), i.dir_name.clone()))
+                        .unwrap_or_default();
+                    (running, pol, oname, odir)
+                })
+                .unwrap_or((
+                    false,
+                    crab_launcher::core::config::RenameFolderPolicy::Never,
+                    String::new(),
+                    String::new(),
+                ));
+
+            if is_running {
+                if let Some(w) = rw_weak.upgrade() {
+                    w.set_error_message(SharedString::from(
+                        "Cannot rename an instance while it is running. Stop the game first.",
+                    ));
+                }
+                return;
+            }
+
+            if policy == crab_launcher::core::config::RenameFolderPolicy::Ask {
+                let target_dir = crab_launcher::core::instance::sanitize_dir_name(&name_str);
+                if target_dir != old_dir {
+                    if let Some(w) = rw_weak.upgrade() {
+                        let _ = w.hide();
+                    }
+                    RENAME_FOLDER_WIN.with(|cell| {
+                        if let Some(rfc) = cell.borrow().as_ref().and_then(|w| w.upgrade()) {
+                            rfc.set_instance_id(SharedString::from(&id_str));
+                            rfc.set_old_name(SharedString::from(&old_name));
+                            rfc.set_new_name(SharedString::from(&name_str));
+                            rfc.set_current_folder(SharedString::from(&old_dir));
+                            rfc.set_target_folder(SharedString::from(&target_dir));
+                            if let Some(main) = main_weak.upgrade() {
+                                center_window_over(rfc.window(), main.window());
+                            }
+                            let _ = rfc.show();
+                        }
+                    });
+                    return;
+                }
+            }
+
+            let rename_folder = policy == crab_launcher::core::config::RenameFolderPolicy::Always;
             let main_weak = main_weak.clone();
             let rw_weak = rw_weak.clone();
             let svc = svc.clone();
@@ -12074,7 +12531,7 @@ fn wire_rename_change_version_and_settings_accounts(
             rt.spawn(async move {
                 match svc
                     .instance_manager
-                    .rename_instance(&id_str, &name_str)
+                    .rename_instance_with_folder(&id_str, &name_str, rename_folder)
                     .await
                 {
                     Ok(updated) => {
@@ -12209,13 +12666,48 @@ fn wire_rename_change_version_and_settings_accounts(
         });
     }
 
-    // 2B. Settings -> Appearance -> Icons (Icon Packs: Lucide, Lucide Dark, custom ZIPs)
+    // 2C. Settings -> Appearance -> Other (Visual Effects & Wallpaper Opacity — Click & Apply imediato)
+    {
+        let broadcaster = theme_broadcaster.clone();
+        let svc = svc.clone();
+        settings_window.on_visual_effects_changed(move |disable_fx, opacity_text| {
+            let opacity = opacity_text.trim().parse::<u32>().unwrap_or(100).min(100);
+            broadcaster.apply_visual_effects(disable_fx, opacity);
+            let cfg_opt = svc.state.lock().ok().map(|mut g| {
+                g.config.appearance.disable_special_effects = disable_fx;
+                g.config.appearance.wallpaper_opacity = opacity;
+                g.config.clone()
+            });
+            if let Some(cfg) = cfg_opt {
+                let paths = svc.paths.clone();
+                let rt = svc.rt.clone();
+                rt.spawn(async move {
+                    let _ = save_config(&paths, &cfg).await;
+                });
+            }
+        });
+    }
+
+    // 2B. Settings -> Appearance -> Icons (Icon Packs: Lucide, Lucide Dark, Phosphor, Tabler, Fluent, custom ZIPs)
     {
         let sw_weak = settings_window.as_weak();
         let svc = svc.clone();
         settings_window.on_refresh_icon_packs_clicked(move || {
+            icon_pack_ui::clear_icon_cache();
             if let Some(sw) = sw_weak.upgrade() {
                 sync_settings_icon_packs_ui(&sw, &svc);
+            }
+        });
+    }
+    {
+        let sw_weak = settings_window.as_weak();
+        let svc = svc.clone();
+        settings_window.on_icon_pack_preview_requested(move |pack_id| {
+            if let Some(sw) = sw_weak.upgrade() {
+                sw.set_icon_pack_preview_images(icon_pack_ui::build_preview_images(
+                    pack_id.as_str(),
+                    &svc.paths.icon_packs_dir(),
+                ));
             }
         });
     }
@@ -12557,7 +13049,8 @@ fn wire_native_dialog_windows(
             let rt = svc.rt.clone();
             rt.spawn(async move {
                 match svc.account_manager.create_offline_account(&uname).await {
-                    Ok(_) => {
+                    Ok(created) => {
+                        let created_id = created.id;
                         let accounts = svc.account_manager.load_accounts().await;
                         if let Ok(mut g) = svc.state.lock() {
                             g.accounts = accounts;
@@ -12571,6 +13064,11 @@ fn wire_native_dialog_windows(
                             if let Some(sw) = sw_weak.upgrade() {
                                 sync_settings_accounts_ui(&sw, &svc);
                             }
+                            LAUNCH_OFFLINE_WIN.with(|cell| {
+                                if let Some(lo) = cell.borrow().as_ref().and_then(|w| w.upgrade()) {
+                                    sync_launch_offline_window(&lo, &svc.state, Some(&created_id));
+                                }
+                            });
                             if let Some(main) = main_weak.upgrade() {
                                 refresh_main_ui(&main, &svc.state, None);
                             }
@@ -12663,7 +13161,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&confirm_action);
         let main_weak = main_window.as_weak();
         main_window.on_request_delete_instance_dialog(move |id, name| {
-            cw.set_window_title(SharedString::from("Delete Instance — Crab"));
+            cw.set_window_title(SharedString::from("Delete Instance — Crab Launcher"));
             cw.set_heading(SharedString::from(format!("Delete '{}'?", name)));
             cw.set_message(SharedString::from(
                 "This permanently deletes the instance directory, worlds, mods, and configs. Shared versions and libraries are preserved.",
@@ -12687,7 +13185,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&input_action);
         let main_weak = main_window.as_weak();
         main_window.on_request_group_dialog(move |title, target_id, initial| {
-            iw.set_window_title(SharedString::from(format!("{} — Crab", title)));
+            iw.set_window_title(SharedString::from(format!("{} — Crab Launcher", title)));
             iw.set_heading(title.clone());
             iw.set_subtitle(SharedString::from("Organize your instances into groups."));
             iw.set_input_text(initial);
@@ -12716,7 +13214,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&confirm_action);
         let main_weak = main_window.as_weak();
         main_window.on_request_delete_group_dialog(move |gid, gname| {
-            cw.set_window_title(SharedString::from("Delete Group — Crab"));
+            cw.set_window_title(SharedString::from("Delete Group — Crab Launcher"));
             cw.set_heading(SharedString::from(format!("Delete Group '{}'?", gname)));
             cw.set_message(SharedString::from(
                 "All instances in this group will be moved to Ungrouped. No instance files will be deleted.",
@@ -12757,7 +13255,7 @@ fn wire_native_dialog_windows(
                 })
                 .unwrap_or((false, "Minecraft".to_string()));
             if confirm {
-                cw.set_window_title(SharedString::from("Stop Minecraft — Crab"));
+                cw.set_window_title(SharedString::from("Stop Minecraft — Crab Launcher"));
                 cw.set_heading(SharedString::from("Stop Minecraft?"));
                 cw.set_message(SharedString::from(format!(
                     "Force stopping '{}' may cause unsaved world progress to be lost.",
@@ -12796,7 +13294,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&input_action);
         let ew_weak = edit_window.as_weak();
         edit_window.on_request_rename_world_dialog(move |folder| {
-            iw.set_window_title(SharedString::from("Rename World — Crab"));
+            iw.set_window_title(SharedString::from("Rename World — Crab Launcher"));
             iw.set_heading(SharedString::from("Rename World"));
             iw.set_subtitle(SharedString::from("Enter a new name for this world."));
             iw.set_input_text(folder.clone());
@@ -12821,7 +13319,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&confirm_action);
         let ew_weak = edit_window.as_weak();
         edit_window.on_request_delete_world_dialog(move |folder| {
-            cw.set_window_title(SharedString::from("Delete World — Crab"));
+            cw.set_window_title(SharedString::from("Delete World — Crab Launcher"));
             cw.set_heading(SharedString::from(format!("Delete World '{}'?", folder)));
             cw.set_message(SharedString::from(
                 "Permanently delete this world folder? This cannot be undone.",
@@ -12845,7 +13343,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&input_action);
         let ew_weak = edit_window.as_weak();
         edit_window.on_request_rename_screenshot_dialog(move |file| {
-            iw.set_window_title(SharedString::from("Rename Screenshot — Crab"));
+            iw.set_window_title(SharedString::from("Rename Screenshot — Crab Launcher"));
             iw.set_heading(SharedString::from("Rename Screenshot"));
             iw.set_subtitle(SharedString::from(
                 "Enter a new filename for this screenshot.",
@@ -12903,7 +13401,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&input_action);
         let cgw_weak = change_group_window.as_weak();
         change_group_window.on_request_rename_group_dialog(move |gid, gname| {
-            iw.set_window_title(SharedString::from("Rename Group — Crab"));
+            iw.set_window_title(SharedString::from("Rename Group — Crab Launcher"));
             iw.set_heading(SharedString::from("Rename Group"));
             iw.set_subtitle(SharedString::from(
                 "Enter a new display name for this group.",
@@ -12932,7 +13430,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&input_action);
         let siw_weak = select_icon_window.as_weak();
         select_icon_window.on_request_rename_icon_dialog(move |icon_id, icon_name| {
-            iw.set_window_title(SharedString::from("Rename Icon — Crab"));
+            iw.set_window_title(SharedString::from("Rename Icon — Crab Launcher"));
             iw.set_heading(SharedString::from("Rename Icon"));
             iw.set_subtitle(SharedString::from(
                 "Enter a new label for this custom icon.",
@@ -12959,7 +13457,7 @@ fn wire_native_dialog_windows(
         let act = Rc::clone(&confirm_action);
         let siw_weak = select_icon_window.as_weak();
         select_icon_window.on_request_delete_icon_dialog(move |icon_id, icon_name, usage| {
-            cw.set_window_title(SharedString::from("Delete Icon — Crab"));
+            cw.set_window_title(SharedString::from("Delete Icon — Crab Launcher"));
             cw.set_heading(SharedString::from(format!("Delete Icon '{}'?", icon_name)));
             cw.set_message(SharedString::from(if usage > 0 {
                 format!(
@@ -12995,7 +13493,7 @@ fn wire_native_dialog_windows(
             } else {
                 format!("'{name}'")
             };
-            cw.set_window_title(SharedString::from("Delete Server — Crab"));
+            cw.set_window_title(SharedString::from("Delete Server — Crab Launcher"));
             cw.set_heading(SharedString::from("Delete Server"));
             cw.set_message(SharedString::from(format!(
                 "Remove {label} from servers.dat?"
@@ -13287,7 +13785,7 @@ fn wire_native_dialog_windows(
                 "resourcepacks" => "resource pack(s)",
                 _ => "shader pack(s)",
             };
-            cw.set_window_title(SharedString::from("Delete Selected — Crab"));
+            cw.set_window_title(SharedString::from("Delete Selected — Crab Launcher"));
             cw.set_heading(SharedString::from(format!("Delete {count} {label}")));
             cw.set_message(SharedString::from(format!(
                 "Permanently delete {count} selected {label} from this instance?"

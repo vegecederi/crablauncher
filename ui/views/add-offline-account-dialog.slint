@@ -5,7 +5,7 @@ import { CrabDialogFrame } from "../components/dialog-window.slint";
 
 /// Janela nativa dedicada para criação de contas Offline (usada pela Toolbar e por Settings -> Accounts).
 export component AddOfflineAccountWindow inherits Window {
-    title: "Add Offline Account — Crab";
+    title: "Add Offline Account — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 390px;
@@ -86,7 +86,7 @@ export component AddOfflineAccountWindow inherits Window {
 
             CrabButton {
                 text: "Cancel";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancel-clicked(); }
@@ -94,7 +94,7 @@ export component AddOfflineAccountWindow inherits Window {
 
             CrabButton {
                 text: "Add Account";
-                icon: @image-url("../../assets/icons/check.svg");
+                icon: Theme.icon-check;
                 has-icon: true;
                 variant: "primary";
                 enabled: root.username != "";

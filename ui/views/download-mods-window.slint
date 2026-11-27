@@ -178,7 +178,7 @@ export component DownloadModsWindow inherits Window {
                     CrabButton {
                         height: Theme.button-height;
                         text: "Filter";
-                        icon: @image-url("../../assets/icons/sliders-horizontal.svg");
+                        icon: Theme.icon-sliders-horizontal;
                         has-icon: true;
                         variant: root.show-filters-panel ? "primary" : "secondary";
                         clicked => {
@@ -191,7 +191,7 @@ export component DownloadModsWindow inherits Window {
                         horizontal-stretch: 1;
                         text <=> root.search-query;
                         placeholder: "Search...";
-                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        leading-icon: Theme.icon-search;
                         has-leading-icon: true;
                         edited => { root.search-edited(); }
                         accepted => { root.search-triggered(); }
@@ -534,7 +534,7 @@ export component DownloadModsWindow inherits Window {
                                                         y: 10px;
                                                         width: 24px;
                                                         height: 24px;
-                                                        source: @image-url("../../assets/icons/puzzle.svg");
+                                                        source: Theme.icon-puzzle;
                                                         colorize: Theme.text-secondary;
                                                     }
                                                 }
@@ -642,7 +642,7 @@ export component DownloadModsWindow inherits Window {
                                         }
                                         if root.detail-homepage != "": CrabButton {
                                             text: "Homepage";
-                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            icon: Theme.icon-external-link;
                                             has-icon: true;
                                             variant: "ghost";
                                             clicked => { root.open-homepage-clicked(root.detail-homepage); }
@@ -662,28 +662,28 @@ export component DownloadModsWindow inherits Window {
 
                                         if root.detail-issues-url != "": CrabButton {
                                             text: "Issues";
-                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            icon: Theme.icon-external-link;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.open-homepage-clicked(root.detail-issues-url); }
                                         }
                                         if root.detail-source-url != "": CrabButton {
                                             text: "Source";
-                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            icon: Theme.icon-external-link;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.open-homepage-clicked(root.detail-source-url); }
                                         }
                                         if root.detail-discord-url != "": CrabButton {
                                             text: "Discord";
-                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            icon: Theme.icon-external-link;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.open-homepage-clicked(root.detail-discord-url); }
                                         }
                                         if root.detail-wiki-url != "": CrabButton {
                                             text: "Wiki";
-                                            icon: @image-url("../../assets/icons/external-link.svg");
+                                            icon: Theme.icon-external-link;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.open-homepage-clicked(root.detail-wiki-url); }
@@ -742,7 +742,7 @@ export component DownloadModsWindow inherits Window {
                                             alignment: start;
                                             CrabButton {
                                                 text: blk.text;
-                                                icon: @image-url("../../assets/icons/external-link.svg");
+                                                icon: Theme.icon-external-link;
                                                 has-icon: true;
                                                 variant: "ghost";
                                                 clicked => { root.open-homepage-clicked(blk.url); }
@@ -802,8 +802,8 @@ export component DownloadModsWindow inherits Window {
                         CrabButton {
                             text: root.detail-queued ? "Remove mod from download" : "Select mod for download";
                             icon: root.detail-queued
-                                ? @image-url("../../assets/icons/check.svg")
-                                : @image-url("../../assets/icons/plus.svg");
+                                ? Theme.icon-check
+                                : Theme.icon-plus;
                             has-icon: true;
                             variant: root.detail-queued ? "secondary" : "primary";
                             enabled: root.selected-project-id != "" && root.version-options.length > 0 && !root.is-downloading;
@@ -846,7 +846,7 @@ export component DownloadModsWindow inherits Window {
 
                 CrabButton {
                     text: "Cancel";
-                    icon: @image-url("../../assets/icons/x.svg");
+                    icon: Theme.icon-x;
                     has-icon: true;
                     variant: "secondary";
                     enabled: !root.is-downloading;
@@ -856,7 +856,7 @@ export component DownloadModsWindow inherits Window {
 
                 CrabButton {
                     text: "Review and confirm (" + root.queued-count + ")";
-                    icon: @image-url("../../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "primary";
                     enabled: root.queued-count > 0 && !root.is-downloading;

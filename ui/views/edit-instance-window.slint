@@ -2,11 +2,13 @@ import { ListView, TextEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { CrabButton } from "../components/button.slint";
 import { CrabTextInput } from "../components/input.slint";
+import { CrabNumberInput } from "../components/number-input.slint";
 import { CrabCheckbox } from "../components/checkbox.slint";
 import { CrabRadioButton } from "../components/radio.slint";
 import { CrabDropdown, DropdownOption } from "../components/dropdown.slint";
 import { NavigationItem } from "../components/navigation-item.slint";
 import { SettingsSection } from "../components/settings-section.slint";
+import { DescriptionBlockItem } from "download-mods-window.slint";
 
 export struct GroupOption {
     id: string,
@@ -318,11 +320,6 @@ export component EditInstanceWindow inherits Window {
     in property <string> memory-warning: "";
     in-out property <bool> override-jvm-args: false;
     in-out property <bool> use-default-jvm-args: false;
-    in property <[DropdownOption]> jvm-preset-options: [];
-    in-out property <string> jvm-preset-id: "default";
-    in-out property <string> jvm-preset-label: "Launcher Default";
-    in property <string> jvm-preset-description: "";
-    in property <string> jvm-preset-compat: "";
     in-out property <string> jvm-args: "";
 
     // Settings page — Console
@@ -375,17 +372,37 @@ export component EditInstanceWindow inherits Window {
     callback resolution-fields-edited();
     callback memory-preset-selected(string);
     callback memory-fields-edited();
-    callback jvm-preset-selected(string);
     callback jvm-args-edited();
-    callback manage-jvm-presets-clicked();
-    callback save-as-jvm-preset-clicked(string);
     callback test-jvm-args-clicked(string, string, string, string);
     callback copy-jvm-args-clicked(string);
     callback open-mangohud-config-clicked();
     callback launch-clicked();
     callback stop-clicked();
+    in-out property <bool> has-unsaved-changes: false;
     callback save-clicked();
+    callback ok-clicked();
     callback cancel-clicked();
+
+    // Modpack gerenciado (visível apenas para instâncias criadas via Modrinth Modpack)
+    in property <bool> has-modpack: false;
+    in property <string> modpack-provider: "";
+    in property <string> modpack-name: "";
+    in property <string> modpack-id: "";
+    in property <string> modpack-version-id: "";
+    in property <string> modpack-version-name: "";
+    in property <string> modpack-homepage-url: "";
+    in property <[DropdownOption]> modpack-version-options: [];
+    in-out property <string> modpack-selected-version-id: "";
+    in-out property <string> modpack-selected-version-label: "";
+    in property <string> modpack-changelog-plain: "";
+    in property <[DescriptionBlockItem]> modpack-changelog-blocks: [];
+    in property <bool> modpack-loading-versions: false;
+    in property <bool> modpack-updating: false;
+    callback modpack-tab-opened();
+    callback modpack-version-selected(string);
+    callback modpack-update-clicked();
+    callback modpack-update-from-file-clicked();
+    callback modpack-open-url-clicked(string);
 
     private property <int> active-override-count:
         (root.override-window ? 1 : 0)
@@ -412,6 +429,41 @@ export component EditInstanceWindow inherits Window {
                     background: Theme.border;
                 }
 
+                // Atalho de scroll do mouse na barra lateral para alternar abas da instância
+                TouchArea {
+                    scroll-event(ev) => {
+                        if (ev.delta-y > 0px) {
+                            root.active-page =
+                                root.active-page == 0 ? 0
+                                : root.active-page == 9 ? 0
+                                : root.active-page == 1 ? (root.has-modpack ? 9 : 0)
+                                : root.active-page - 1;
+                            if (root.active-page == 9) { root.modpack-tab-opened(); }
+                            if (root.active-page == 2) { root.refresh-texture-packs-clicked(); }
+                            if (root.active-page == 3) { root.refresh-shader-packs-clicked(); }
+                            if (root.active-page == 4) { root.refresh-worlds-clicked(); }
+                            if (root.active-page == 5) { root.refresh-servers-clicked(); }
+                            if (root.active-page == 6) { root.refresh-screenshots-clicked(); }
+                            if (root.active-page == 7) { root.refresh-logs-clicked(); }
+                            return accept;
+                        } else if (ev.delta-y < 0px) {
+                            root.active-page =
+                                root.active-page == 0 ? (root.has-modpack ? 9 : 1)
+                                : root.active-page == 9 ? 1
+                                : min(8, root.active-page + 1);
+                            if (root.active-page == 9) { root.modpack-tab-opened(); }
+                            if (root.active-page == 2) { root.refresh-texture-packs-clicked(); }
+                            if (root.active-page == 3) { root.refresh-shader-packs-clicked(); }
+                            if (root.active-page == 4) { root.refresh-worlds-clicked(); }
+                            if (root.active-page == 5) { root.refresh-servers-clicked(); }
+                            if (root.active-page == 6) { root.refresh-screenshots-clicked(); }
+                            if (root.active-page == 7) { root.refresh-logs-clicked(); }
+                            return accept;
+                        }
+                        reject
+                    }
+                }
+
                 VerticalLayout {
                     padding: Theme.space-sm;
                     spacing: Theme.space-xs;
@@ -420,22 +472,33 @@ export component EditInstanceWindow inherits Window {
                         label: "Version";
                         icon: root.has-instance-icon
                             ? root.instance-icon
-                            : @image-url("../../assets/icons/cube.svg");
+                            : Theme.icon-cube;
                         preserve-icon-colors: root.has-instance-icon;
                         selected: root.active-page == 0;
                         clicked => { root.active-page = 0; }
                     }
 
+                    if root.has-modpack: NavigationItem {
+                        label: "Modpack";
+                        icon: @image-url("../../assets/providers/modrinth.svg");
+                        preserve-icon-colors: true;
+                        selected: root.active-page == 9;
+                        clicked => {
+                            root.active-page = 9;
+                            root.modpack-tab-opened();
+                        }
+                    }
+
                     NavigationItem {
                         label: "Mods";
-                        icon: @image-url("../../assets/icons/puzzle.svg");
+                        icon: Theme.icon-puzzle;
                         selected: root.active-page == 1;
                         clicked => { root.active-page = 1; }
                     }
 
                     NavigationItem {
                         label: "Texture Packs";
-                        icon: @image-url("../../assets/icons/palette.svg");
+                        icon: Theme.icon-palette;
                         selected: root.active-page == 2;
                         clicked => {
                             root.active-page = 2;
@@ -445,7 +508,7 @@ export component EditInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Shader Packs";
-                        icon: @image-url("../../assets/icons/layers.svg");
+                        icon: Theme.icon-layers;
                         selected: root.active-page == 3;
                         clicked => {
                             root.active-page = 3;
@@ -455,7 +518,7 @@ export component EditInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Worlds";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         selected: root.active-page == 4;
                         clicked => {
                             root.active-page = 4;
@@ -465,7 +528,7 @@ export component EditInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Servers";
-                        icon: @image-url("../../assets/icons/terminal.svg");
+                        icon: Theme.icon-terminal;
                         selected: root.active-page == 5;
                         clicked => {
                             root.active-page = 5;
@@ -475,7 +538,7 @@ export component EditInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Screenshots";
-                        icon: @image-url("../../assets/icons/palette.svg");
+                        icon: Theme.icon-palette;
                         selected: root.active-page == 6;
                         clicked => {
                             root.active-page = 6;
@@ -485,7 +548,7 @@ export component EditInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Logs";
-                        icon: @image-url("../../assets/icons/file-text.svg");
+                        icon: Theme.icon-file-text;
                         selected: root.active-page == 7;
                         clicked => {
                             root.active-page = 7;
@@ -495,7 +558,7 @@ export component EditInstanceWindow inherits Window {
 
                     NavigationItem {
                         label: "Settings";
-                        icon: @image-url("../../assets/icons/settings.svg");
+                        icon: Theme.icon-settings;
                         selected: root.active-page == 8;
                         clicked => { root.active-page = 8; }
                     }
@@ -599,19 +662,19 @@ export component EditInstanceWindow inherits Window {
                                                 image-fit: contain;
                                             }
                                             if comp.uid == "net.minecraft": Image {
-                                                source: @image-url("../../assets/icons/cube.svg");
+                                                source: Theme.icon-cube;
                                                 width: 16px;
                                                 height: 16px;
                                                 colorize: Theme.accent;
                                             }
                                             if comp.uid == "org.lwjgl" || comp.uid == "org.lwjgl3": Image {
-                                                source: @image-url("../../assets/icons/layers.svg");
+                                                source: Theme.icon-layers;
                                                 width: 16px;
                                                 height: 16px;
                                                 colorize: Theme.icon-primary;
                                             }
                                             if comp.uid != "net.minecraft" && comp.uid != "org.lwjgl" && comp.uid != "org.lwjgl3" && comp.uid != "net.fabricmc.fabric-loader" && comp.uid != "net.fabricmc.intermediary" && comp.uid != "net.minecraftforge" && comp.uid != "net.neoforged" && comp.uid != "org.quiltmc.quilt-loader" && comp.uid != "com.mumfrey.liteloader": Image {
-                                                source: @image-url("../../assets/icons/puzzle.svg");
+                                                source: Theme.icon-puzzle;
                                                 width: 16px;
                                                 height: 16px;
                                                 colorize: Theme.icon-secondary;
@@ -684,7 +747,7 @@ export component EditInstanceWindow inherits Window {
                             }
                             CrabButton {
                                 text: "Install Loader";
-                                icon: @image-url("../../assets/icons/download.svg");
+                                icon: Theme.icon-download;
                                 has-icon: true;
                                 variant: "secondary";
                                 y: (parent.height - self.height) / 2;
@@ -802,6 +865,9 @@ export component EditInstanceWindow inherits Window {
                                                 mods-list-scope.focus();
                                                 root.content-item-clicked("mods", idx, mods-list-scope.ctrl-down, mods-list-scope.shift-down);
                                             }
+                                            double-clicked => {
+                                                root.toggle-mod-clicked(m.file-name);
+                                            }
                                         }
 
                                     HorizontalLayout {
@@ -832,7 +898,7 @@ export component EditInstanceWindow inherits Window {
                                                     ? @image-url("../../assets/providers/modrinth.svg")
                                                     : m.provider == "CurseForge"
                                                         ? @image-url("../../assets/providers/curseforge.svg")
-                                                        : @image-url("../../assets/icons/puzzle.svg");
+                                                        : Theme.icon-puzzle;
                                                 width: 24px;
                                                 height: 24px;
                                                 image-fit: contain;
@@ -925,7 +991,7 @@ export component EditInstanceWindow inherits Window {
                                         ? @image-url("../../assets/providers/modrinth.svg")
                                         : root.selected-mod-provider == "CurseForge"
                                             ? @image-url("../../assets/providers/curseforge.svg")
-                                            : @image-url("../../assets/icons/puzzle.svg");
+                                            : Theme.icon-puzzle;
                                     image-fit: contain;
                                     colorize: root.selected-mod-provider == "Local" ? Theme.icon-secondary : transparent;
                                 }
@@ -998,7 +1064,7 @@ export component EditInstanceWindow inherits Window {
                     CrabTextInput {
                         text <=> root.mod-search-query;
                         placeholder: "Search installed mods...";
-                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        leading-icon: Theme.icon-search;
                         has-leading-icon: true;
                         edited => { root.refresh-mods-clicked(); }
                     }
@@ -1129,7 +1195,7 @@ export component EditInstanceWindow inherits Window {
                                                     ? @image-url("../../assets/providers/modrinth.svg")
                                                     : pk.provider == "CurseForge"
                                                         ? @image-url("../../assets/providers/curseforge.svg")
-                                                        : @image-url("../../assets/icons/palette.svg");
+                                                        : Theme.icon-palette;
                                                 width: 24px;
                                                 height: 24px;
                                                 image-fit: contain;
@@ -1155,7 +1221,7 @@ export component EditInstanceWindow inherits Window {
                                                 width: 16px;
                                                 alignment: center;
                                                 Image {
-                                                    source: @image-url("../../assets/icons/x.svg");
+                                                    source: Theme.icon-x;
                                                     width: 14px;
                                                     height: 14px;
                                                     colorize: Theme.danger;
@@ -1265,7 +1331,7 @@ export component EditInstanceWindow inherits Window {
                                         ? @image-url("../../assets/providers/modrinth.svg")
                                         : root.selected-texture-pack-provider == "CurseForge"
                                             ? @image-url("../../assets/providers/curseforge.svg")
-                                            : @image-url("../../assets/icons/palette.svg");
+                                            : Theme.icon-palette;
                                     image-fit: contain;
                                     colorize: root.selected-texture-pack-provider == "Local" ? Theme.icon-secondary : transparent;
                                 }
@@ -1337,7 +1403,7 @@ export component EditInstanceWindow inherits Window {
                     CrabTextInput {
                         text <=> root.texture-pack-search;
                         placeholder: "Search installed resource packs...";
-                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        leading-icon: Theme.icon-search;
                         has-leading-icon: true;
                         edited => { root.refresh-texture-packs-clicked(); }
                     }
@@ -1485,7 +1551,7 @@ export component EditInstanceWindow inherits Window {
                                                     ? @image-url("../../assets/providers/modrinth.svg")
                                                     : sp.provider == "CurseForge"
                                                         ? @image-url("../../assets/providers/curseforge.svg")
-                                                        : @image-url("../../assets/icons/layers.svg");
+                                                        : Theme.icon-layers;
                                                 width: 24px;
                                                 height: 24px;
                                                 image-fit: contain;
@@ -1579,7 +1645,7 @@ export component EditInstanceWindow inherits Window {
                                         ? @image-url("../../assets/providers/modrinth.svg")
                                         : root.selected-shader-pack-provider == "CurseForge"
                                             ? @image-url("../../assets/providers/curseforge.svg")
-                                            : @image-url("../../assets/icons/layers.svg");
+                                            : Theme.icon-layers;
                                     image-fit: contain;
                                     colorize: root.selected-shader-pack-provider == "Local" ? Theme.icon-secondary : transparent;
                                 }
@@ -1651,7 +1717,7 @@ export component EditInstanceWindow inherits Window {
                     CrabTextInput {
                         text <=> root.shader-pack-search;
                         placeholder: "Search installed shader packs...";
-                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        leading-icon: Theme.icon-search;
                         has-leading-icon: true;
                         edited => { root.refresh-shader-packs-clicked(); }
                     }
@@ -1704,7 +1770,7 @@ export component EditInstanceWindow inherits Window {
                                             image-fit: cover;
                                         }
                                         if !w.has-icon: Image {
-                                            source: @image-url("../../assets/icons/cube.svg");
+                                            source: Theme.icon-cube;
                                             width: 36px;
                                             height: 36px;
                                             colorize: Theme.accent;
@@ -1745,7 +1811,7 @@ export component EditInstanceWindow inherits Window {
                     CrabTextInput {
                         text <=> root.world-search;
                         placeholder: "Search worlds...";
-                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        leading-icon: Theme.icon-search;
                         has-leading-icon: true;
                         edited => { root.refresh-worlds-clicked(); }
                     }
@@ -1803,7 +1869,7 @@ export component EditInstanceWindow inherits Window {
                                             image-fit: cover;
                                         }
                                         if !srv.has-icon: Image {
-                                            source: @image-url("../../assets/icons/cube.svg");
+                                            source: Theme.icon-cube;
                                             width: 26px;
                                             height: 26px;
                                             colorize: Theme.icon-secondary;
@@ -1944,7 +2010,7 @@ export component EditInstanceWindow inherits Window {
                         }
                         CrabButton {
                             text: "Copy";
-                            icon: @image-url("../../assets/icons/copy.svg");
+                            icon: Theme.icon-copy;
                             has-icon: true;
                             variant: "secondary";
                             enabled: root.selected-log-file != "";
@@ -1952,7 +2018,7 @@ export component EditInstanceWindow inherits Window {
                         }
                         CrabButton {
                             text: "Export";
-                            icon: @image-url("../../assets/icons/download.svg");
+                            icon: Theme.icon-download;
                             has-icon: true;
                             variant: "secondary";
                             enabled: root.selected-log-file != "";
@@ -1960,7 +2026,7 @@ export component EditInstanceWindow inherits Window {
                         }
                         CrabButton {
                             text: "Delete";
-                            icon: @image-url("../../assets/icons/trash.svg");
+                            icon: Theme.icon-trash;
                             has-icon: true;
                             variant: "danger";
                             enabled: root.selected-log-file != "";
@@ -1968,14 +2034,14 @@ export component EditInstanceWindow inherits Window {
                         }
                         CrabButton {
                             text: "Open Folder";
-                            icon: @image-url("../../assets/icons/folder.svg");
+                            icon: Theme.icon-folder;
                             has-icon: true;
                             variant: "secondary";
                             clicked => { root.open-logs-folder-clicked(); }
                         }
                         CrabButton {
                             text: "";
-                            icon: @image-url("../../assets/icons/refresh.svg");
+                            icon: Theme.icon-refresh;
                             has-icon: true;
                             variant: "secondary";
                             clicked => { root.refresh-logs-clicked(); }
@@ -1985,7 +2051,7 @@ export component EditInstanceWindow inherits Window {
                     CrabTextInput {
                         text <=> root.log-search-query;
                         placeholder: "Search log lines...";
-                        leading-icon: @image-url("../../assets/icons/search.svg");
+                        leading-icon: Theme.icon-search;
                         has-leading-icon: true;
                         edited => { root.select-log-file(root.selected-log-file); }
                     }
@@ -2123,7 +2189,7 @@ export component EditInstanceWindow inherits Window {
                                 spacing: Theme.space-xs;
                                 CrabButton {
                                     text: "Reset to Global";
-                                    icon: @image-url("../../assets/icons/refresh.svg");
+                                    icon: Theme.icon-refresh;
                                     has-icon: true;
                                     variant: "secondary";
                                     enabled: root.active-override-count > 0;
@@ -2137,7 +2203,7 @@ export component EditInstanceWindow inherits Window {
                                 }
                                 CrabButton {
                                     text: "Open Global Settings";
-                                    icon: @image-url("../../assets/icons/settings.svg");
+                                    icon: Theme.icon-settings;
                                     has-icon: true;
                                     variant: "secondary";
                                     clicked => { root.open-global-settings-clicked(); }
@@ -2182,40 +2248,58 @@ export component EditInstanceWindow inherits Window {
                     }
 
                     // Barra de abas secundárias (General | Java | Console | Tweaks)
-                    HorizontalLayout {
-                        spacing: 4px;
-                        alignment: start;
+                    Rectangle {
+                        height: Theme.button-height;
+                        background: transparent;
 
-                        CrabButton {
-                            text: "General";
-                            icon: @image-url("../../assets/icons/settings.svg");
-                            has-icon: true;
-                            variant: root.settings-subtab == 0 ? "primary" : "secondary";
-                            clicked => { root.settings-subtab = 0; }
+                        TouchArea {
+                            scroll-event(ev) => {
+                                if (ev.delta-y > 0px) {
+                                    root.settings-subtab = max(0, root.settings-subtab - 1);
+                                    return accept;
+                                } else if (ev.delta-y < 0px) {
+                                    root.settings-subtab = min(3, root.settings-subtab + 1);
+                                    return accept;
+                                }
+                                reject
+                            }
                         }
 
-                        CrabButton {
-                            text: "Java";
-                            icon: @image-url("../../assets/icons/coffee.svg");
-                            has-icon: true;
-                            variant: root.settings-subtab == 1 ? "primary" : "secondary";
-                            clicked => { root.settings-subtab = 1; }
-                        }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
 
-                        CrabButton {
-                            text: "Console";
-                            icon: @image-url("../../assets/icons/terminal.svg");
-                            has-icon: true;
-                            variant: root.settings-subtab == 2 ? "primary" : "secondary";
-                            clicked => { root.settings-subtab = 2; }
-                        }
+                            CrabButton {
+                                text: "General";
+                                icon: Theme.icon-settings;
+                                has-icon: true;
+                                variant: root.settings-subtab == 0 ? "primary" : "secondary";
+                                clicked => { root.settings-subtab = 0; }
+                            }
 
-                        CrabButton {
-                            text: "Tweaks";
-                            icon: @image-url("../../assets/icons/sliders-horizontal.svg");
-                            has-icon: true;
-                            variant: root.settings-subtab == 3 ? "primary" : "secondary";
-                            clicked => { root.settings-subtab = 3; }
+                            CrabButton {
+                                text: "Java";
+                                icon: Theme.icon-coffee;
+                                has-icon: true;
+                                variant: root.settings-subtab == 1 ? "primary" : "secondary";
+                                clicked => { root.settings-subtab = 1; }
+                            }
+
+                            CrabButton {
+                                text: "Console";
+                                icon: Theme.icon-terminal;
+                                has-icon: true;
+                                variant: root.settings-subtab == 2 ? "primary" : "secondary";
+                                clicked => { root.settings-subtab = 2; }
+                            }
+
+                            CrabButton {
+                                text: "Tweaks";
+                                icon: Theme.icon-sliders-horizontal;
+                                has-icon: true;
+                                variant: root.settings-subtab == 3 ? "primary" : "secondary";
+                                clicked => { root.settings-subtab = 3; }
+                            }
                         }
                     }
 
@@ -2246,7 +2330,7 @@ export component EditInstanceWindow inherits Window {
                                             horizontal-stretch: 1;
                                             spacing: 4px;
                                             Text { text: "Instance Name"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput { text <=> root.instance-name; placeholder: "Instance name"; edited => { root.save-clicked(); } }
+                                            CrabTextInput { text <=> root.instance-name; placeholder: "Instance name"; edited => { root.has-unsaved-changes = true; } }
                                         }
                                         VerticalLayout {
                                             width: 220px;
@@ -2257,7 +2341,7 @@ export component EditInstanceWindow inherits Window {
                                                 options: root.group-dropdown-options;
                                                 selected-id <=> root.selected-group-id;
                                                 selected-label: root.group-name-display;
-                                                selected(gid) => { root.group-selected(gid); }
+                                                selected(gid) => { root.has-unsaved-changes = true; root.group-selected(gid); }
                                             }
                                         }
                                     }
@@ -2269,21 +2353,21 @@ export component EditInstanceWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Override global window settings";
                                         checked <=> root.override-window;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     CrabCheckbox {
                                         label: "Start Minecraft in Fullscreen";
                                         checked <=> root.start-fullscreen;
                                         enabled: root.override-window;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     CrabCheckbox {
                                         label: "Use Custom Window Resolution";
                                         checked <=> root.use-custom-resolution;
                                         enabled: root.override-window && !root.start-fullscreen;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     VerticalLayout {
@@ -2295,7 +2379,7 @@ export component EditInstanceWindow inherits Window {
                                             selected-id <=> root.resolution-preset-id;
                                             selected-label: root.resolution-preset-label;
                                             enabled: root.override-window && root.use-custom-resolution && !root.start-fullscreen;
-                                            selected(id) => { root.resolution-preset-selected(id); }
+                                            selected(id) => { root.has-unsaved-changes = true; root.resolution-preset-selected(id); }
                                         }
                                     }
 
@@ -2303,25 +2387,31 @@ export component EditInstanceWindow inherits Window {
                                         spacing: Theme.space-md;
                                         alignment: start;
                                         VerticalLayout {
-                                            width: 140px;
+                                            width: 148px;
                                             spacing: 4px;
                                             Text { text: "Width (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
                                                 text <=> root.window-width;
                                                 enabled: root.override-window && root.use-custom-resolution && !root.start-fullscreen;
                                                 placeholder: "854";
-                                                edited(_) => { root.resolution-fields-edited(); }
+                                                min-value: 320;
+                                                max-value: 7680;
+                                                step: 10;
+                                                edited(_) => { root.has-unsaved-changes = true; root.resolution-fields-edited(); }
                                             }
                                         }
                                         VerticalLayout {
-                                            width: 140px;
+                                            width: 148px;
                                             spacing: 4px;
                                             Text { text: "Height (px)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
                                                 text <=> root.window-height;
                                                 enabled: root.override-window && root.use-custom-resolution && !root.start-fullscreen;
                                                 placeholder: "480";
-                                                edited(_) => { root.resolution-fields-edited(); }
+                                                min-value: 240;
+                                                max-value: 4320;
+                                                step: 10;
+                                                edited(_) => { root.has-unsaved-changes = true; root.resolution-fields-edited(); }
                                             }
                                         }
                                     }
@@ -2333,7 +2423,7 @@ export component EditInstanceWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Override Global Launcher Behavior";
                                         checked <=> root.override-launcher-behavior;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     Text {
@@ -2349,25 +2439,25 @@ export component EditInstanceWindow inherits Window {
                                             label: "Keep Launcher Open";
                                             selected: root.on-launch-behavior == 0;
                                             enabled: root.override-launcher-behavior;
-                                            clicked => { root.on-launch-behavior = 0; }
+                                            clicked => { root.on-launch-behavior = 0; root.has-unsaved-changes = true; }
                                         }
                                         CrabRadioButton {
                                             label: "Minimize Launcher";
                                             selected: root.on-launch-behavior == 1;
                                             enabled: root.override-launcher-behavior;
-                                            clicked => { root.on-launch-behavior = 1; }
+                                            clicked => { root.on-launch-behavior = 1; root.has-unsaved-changes = true; }
                                         }
                                         CrabRadioButton {
                                             label: "Hide Launcher";
                                             selected: root.on-launch-behavior == 2;
                                             enabled: root.override-launcher-behavior;
-                                            clicked => { root.on-launch-behavior = 2; }
+                                            clicked => { root.on-launch-behavior = 2; root.has-unsaved-changes = true; }
                                         }
                                         CrabRadioButton {
                                             label: "Close Launcher";
                                             selected: root.on-launch-behavior == 3;
                                             enabled: root.override-launcher-behavior;
-                                            clicked => { root.on-launch-behavior = 3; }
+                                            clicked => { root.on-launch-behavior = 3; root.has-unsaved-changes = true; }
                                         }
                                     }
 
@@ -2377,19 +2467,19 @@ export component EditInstanceWindow inherits Window {
                                         label: "Reopen Launcher After Game Exit";
                                         checked <=> root.reopen-on-exit;
                                         enabled: root.override-launcher-behavior && root.on-launch-behavior != 0;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Reopen Launcher After Game Crash";
                                         checked <=> root.reopen-on-crash;
                                         enabled: root.override-launcher-behavior && root.on-launch-behavior != 0;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     CrabCheckbox {
                                         label: "Reopen Launcher After Game Is Killed";
                                         checked <=> root.reopen-on-kill;
                                         enabled: root.override-launcher-behavior && root.on-launch-behavior != 0;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                 }
                             }
@@ -2406,7 +2496,7 @@ export component EditInstanceWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Override global Java installation";
                                         checked <=> root.override-java;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     VerticalLayout {
@@ -2416,7 +2506,7 @@ export component EditInstanceWindow inherits Window {
                                             text <=> root.java-path;
                                             enabled: root.override-java;
                                             placeholder: "Select or enter path to java executable...";
-                                            edited => { root.save-clicked(); }
+                                            edited => { root.has-unsaved-changes = true; }
                                         }
                                     }
 
@@ -2426,7 +2516,7 @@ export component EditInstanceWindow inherits Window {
 
                                         CrabButton {
                                             text: "Detect";
-                                            icon: @image-url("../../assets/icons/scan-search.svg");
+                                            icon: Theme.icon-scan-search;
                                             has-icon: true;
                                             variant: "secondary";
                                             enabled: root.override-java;
@@ -2435,7 +2525,7 @@ export component EditInstanceWindow inherits Window {
 
                                         CrabButton {
                                             text: "Browse";
-                                            icon: @image-url("../../assets/icons/folder.svg");
+                                            icon: Theme.icon-folder;
                                             has-icon: true;
                                             variant: "secondary";
                                             enabled: root.override-java;
@@ -2444,7 +2534,7 @@ export component EditInstanceWindow inherits Window {
 
                                         CrabButton {
                                             text: "Test Settings";
-                                            icon: @image-url("../../assets/icons/flask-conical.svg");
+                                            icon: Theme.icon-flask-conical;
                                             has-icon: true;
                                             variant: "secondary";
                                             enabled: root.override-java && root.java-path != "";
@@ -2453,7 +2543,7 @@ export component EditInstanceWindow inherits Window {
 
                                         CrabButton {
                                             text: "Open Java Downloader";
-                                            icon: @image-url("../../assets/icons/download.svg");
+                                            icon: Theme.icon-download;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => { root.open-java-downloader-clicked(); }
@@ -2474,7 +2564,7 @@ export component EditInstanceWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Override global memory settings";
                                         checked <=> root.override-memory;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     VerticalLayout {
@@ -2486,7 +2576,7 @@ export component EditInstanceWindow inherits Window {
                                             selected-id <=> root.memory-preset-id;
                                             selected-label: root.memory-preset-label;
                                             enabled: root.override-memory;
-                                            selected(id) => { root.memory-preset-selected(id); }
+                                            selected(id) => { root.has-unsaved-changes = true; root.memory-preset-selected(id); }
                                         }
                                     }
 
@@ -2498,11 +2588,14 @@ export component EditInstanceWindow inherits Window {
                                             width: 170px;
                                             spacing: 4px;
                                             Text { text: "Minimum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
                                                 text <=> root.min-memory-mb;
                                                 enabled: root.override-memory;
                                                 placeholder: "512";
-                                                edited(_) => { root.memory-fields-edited(); }
+                                                min-value: 128;
+                                                max-value: 65536;
+                                                step: 256;
+                                                edited(_) => { root.has-unsaved-changes = true; root.memory-fields-edited(); }
                                             }
                                         }
 
@@ -2510,11 +2603,14 @@ export component EditInstanceWindow inherits Window {
                                             width: 170px;
                                             spacing: 4px;
                                             Text { text: "Maximum Memory (MiB)"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabTextInput {
+                                            CrabNumberInput {
                                                 text <=> root.max-memory-mb;
                                                 enabled: root.override-memory;
                                                 placeholder: "2048";
-                                                edited(_) => { root.memory-fields-edited(); }
+                                                min-value: 128;
+                                                max-value: 65536;
+                                                step: 256;
+                                                edited(_) => { root.has-unsaved-changes = true; root.memory-fields-edited(); }
                                             }
                                         }
                                     }
@@ -2547,48 +2643,7 @@ export component EditInstanceWindow inherits Window {
                                     CrabCheckbox {
                                         label: "Override global JVM arguments";
                                         checked <=> root.override-jvm-args;
-                                        toggled => { root.save-clicked(); }
-                                    }
-
-                                    HorizontalLayout {
-                                        spacing: Theme.space-sm;
-                                        alignment: start;
-                                        VerticalLayout {
-                                            spacing: 4px;
-                                            Text { text: "Argument Preset"; font-size: Theme.font-xs; color: Theme.text-secondary; }
-                                            CrabDropdown {
-                                                width: 260px;
-                                                options: root.jvm-preset-options;
-                                                selected-id <=> root.jvm-preset-id;
-                                                selected-label: root.jvm-preset-label;
-                                                enabled: root.override-jvm-args;
-                                                selected(id) => { root.jvm-preset-selected(id); }
-                                            }
-                                        }
-                                        VerticalLayout {
-                                            alignment: end;
-                                            CrabButton {
-                                                text: "Manage Presets...";
-                                                icon: @image-url("../../assets/icons/sliders-horizontal.svg");
-                                                has-icon: true;
-                                                variant: "secondary";
-                                                clicked => { root.manage-jvm-presets-clicked(); }
-                                            }
-                                        }
-                                    }
-
-                                    if root.jvm-preset-description != "": Text {
-                                        text: root.jvm-preset-description;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
-                                    }
-
-                                    if root.jvm-preset-compat != "": Text {
-                                        text: "Compatibility: " + root.jvm-preset-compat;
-                                        font-size: Theme.font-xs;
-                                        color: Theme.text-secondary;
-                                        wrap: word-wrap;
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
 
                                     TextEdit {
@@ -2596,7 +2651,7 @@ export component EditInstanceWindow inherits Window {
                                         text <=> root.jvm-args;
                                         enabled: root.override-jvm-args;
                                         font-size: Theme.font-sm;
-                                        edited(_) => { root.jvm-args-edited(); }
+                                        edited(_) => { root.has-unsaved-changes = true; root.jvm-args-edited(); }
                                     }
 
                                     HorizontalLayout {
@@ -2604,15 +2659,14 @@ export component EditInstanceWindow inherits Window {
                                         alignment: start;
                                         CrabButton {
                                             text: "Reset to Default";
-                                            icon: @image-url("../../assets/icons/refresh.svg");
+                                            icon: Theme.icon-refresh;
                                             has-icon: true;
                                             variant: "secondary";
                                             enabled: root.override-jvm-args;
-                                            clicked => { root.jvm-preset-selected("default"); }
                                         }
                                         CrabButton {
                                             text: "Test Arguments";
-                                            icon: @image-url("../../assets/icons/flask-conical.svg");
+                                            icon: Theme.icon-flask-conical;
                                             has-icon: true;
                                             variant: "secondary";
                                             enabled: root.override-jvm-args;
@@ -2627,7 +2681,7 @@ export component EditInstanceWindow inherits Window {
                                         }
                                         CrabButton {
                                             text: "Copy Arguments";
-                                            icon: @image-url("../../assets/icons/copy.svg");
+                                            icon: Theme.icon-copy;
                                             has-icon: true;
                                             variant: "secondary";
                                             clicked => {
@@ -2635,14 +2689,6 @@ export component EditInstanceWindow inherits Window {
                                                     "-Xms" + root.min-memory-mb + "M -Xmx" + root.max-memory-mb + "M " + root.jvm-args
                                                 );
                                             }
-                                        }
-                                        CrabButton {
-                                            text: "Save as Preset";
-                                            icon: @image-url("../../assets/icons/save.svg");
-                                            has-icon: true;
-                                            variant: "secondary";
-                                            enabled: root.override-jvm-args && root.jvm-args != "";
-                                            clicked => { root.save-as-jvm-preset-clicked(root.jvm-args); }
                                         }
                                     }
 
@@ -2662,28 +2708,28 @@ export component EditInstanceWindow inherits Window {
                                 CrabCheckbox {
                                     label: "Override global console settings";
                                     checked <=> root.override-console;
-                                    toggled => { root.save-clicked(); }
+                                    toggled => { root.has-unsaved-changes = true; }
                                 }
 
                                 CrabCheckbox {
                                     label: "Show console automatically on launch";
                                     checked <=> root.show-console-on-launch;
                                     enabled: root.override-console;
-                                    toggled => { root.save-clicked(); }
+                                    toggled => { root.has-unsaved-changes = true; }
                                 }
 
                                 CrabCheckbox {
                                     label: "Show console when Minecraft crashes";
                                     checked <=> root.show-console-on-crash;
                                     enabled: root.override-console;
-                                    toggled => { root.save-clicked(); }
+                                    toggled => { root.has-unsaved-changes = true; }
                                 }
 
                                 CrabCheckbox {
                                     label: "Close console on successful exit";
                                     checked <=> root.close-console-on-exit;
                                     enabled: root.override-console;
-                                    toggled => { root.save-clicked(); }
+                                    toggled => { root.has-unsaved-changes = true; }
                                 }
 
                                 Text {
@@ -2701,7 +2747,7 @@ export component EditInstanceWindow inherits Window {
                                 CrabCheckbox {
                                     label: "Override Global Performance Tweaks";
                                     checked <=> root.override-tweaks;
-                                    toggled => { root.save-clicked(); }
+                                    toggled => { root.has-unsaved-changes = true; }
                                 }
 
                                 if !root.is-linux: Text {
@@ -2717,7 +2763,7 @@ export component EditInstanceWindow inherits Window {
                                         label: "Enable Feral GameMode";
                                         checked <=> root.enable-gamemode;
                                         enabled: root.override-tweaks && root.is-linux && root.gamemode-available;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     Text {
                                         text: root.gamemode-available
@@ -2736,7 +2782,7 @@ export component EditInstanceWindow inherits Window {
                                         label: "Enable MangoHud";
                                         checked <=> root.enable-mangohud;
                                         enabled: root.override-tweaks && root.is-linux && root.mangohud-available;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     Text {
                                         text: root.mangohud-available
@@ -2752,10 +2798,10 @@ export component EditInstanceWindow inherits Window {
                                     alignment: start;
                                     CrabButton {
                                         text: "Open MangoHud Configuration";
-                                        icon: @image-url("../../assets/icons/external-link.svg");
+                                        icon: Theme.icon-external-link;
                                         has-icon: true;
                                         variant: "secondary";
-                                        enabled: root.is-linux;
+                                        enabled: root.is-linux && root.mangohud-available;
                                         clicked => { root.open-mangohud-config-clicked(); }
                                     }
                                 }
@@ -2766,7 +2812,7 @@ export component EditInstanceWindow inherits Window {
                                         label: "Use Discrete GPU";
                                         checked <=> root.use-discrete-gpu;
                                         enabled: root.override-tweaks && root.is-linux && root.discrete-gpu-available;
-                                        toggled => { root.save-clicked(); }
+                                        toggled => { root.has-unsaved-changes = true; }
                                     }
                                     Text {
                                         text: root.gpu-detail;
@@ -2785,7 +2831,7 @@ export component EditInstanceWindow inherits Window {
                                             label: "Use Zink";
                                             checked <=> root.use-zink;
                                             enabled: root.override-tweaks && root.is-linux;
-                                            toggled => { root.save-clicked(); }
+                                            toggled => { root.has-unsaved-changes = true; }
                                         }
                                         Text {
                                             text: root.zink-available
@@ -2801,6 +2847,276 @@ export component EditInstanceWindow inherits Window {
                                         font-size: Theme.font-xs;
                                         color: Theme.text-secondary;
                                         wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Página 9: Modpack gerenciado (Modrinth)
+                if root.active-page == 9 && root.has-modpack: VerticalLayout {
+                    padding: Theme.space-md;
+                    spacing: Theme.space-sm;
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+                        Image {
+                            source: @image-url("../../assets/providers/modrinth.svg");
+                            width: 22px;
+                            height: 22px;
+                            y: (parent.height - self.height) / 2;
+                            image-fit: contain;
+                        }
+                        Text {
+                            text: "Modpack";
+                            font-size: Theme.font-xl;
+                            font-weight: 700;
+                            color: Theme.text-primary;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: "Pack Information";
+                        font-size: Theme.font-sm;
+                        font-weight: 600;
+                        color: Theme.text-secondary;
+                    }
+
+                    Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+
+                        VerticalLayout {
+                            padding: Theme.space-md;
+                            spacing: 6px;
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+                                Text {
+                                    text: "Pack Name:";
+                                    font-size: Theme.font-sm;
+                                    font-weight: 600;
+                                    color: Theme.text-secondary;
+                                }
+                                Text {
+                                    text: root.modpack-name;
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-primary;
+                                    overflow: elide;
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+                                Text {
+                                    text: "Current version:";
+                                    font-size: Theme.font-sm;
+                                    font-weight: 600;
+                                    color: Theme.text-secondary;
+                                }
+                                Text {
+                                    text: root.modpack-version-name;
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-primary;
+                                    overflow: elide;
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+                                Text {
+                                    text: "Provider information: Website:";
+                                    font-size: Theme.font-sm;
+                                    font-weight: 600;
+                                    color: Theme.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    height: 20px;
+                                    width: mp-site-lbl.preferred-width + 4px;
+                                    background: transparent;
+                                    mp-site-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            if (root.modpack-homepage-url != "") {
+                                                root.modpack-open-url-clicked(root.modpack-homepage-url);
+                                            }
+                                        }
+                                    }
+                                    mp-site-lbl := Text {
+                                        text: root.modpack-provider != "" ? root.modpack-provider : "Modrinth";
+                                        font-size: Theme.font-sm;
+                                        font-weight: 600;
+                                        color: mp-site-touch.has-hover ? Theme.accent-hover : Theme.accent;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                Text {
+                                    text: "|  Pack ID: " + root.modpack-id + "  |  Version ID: " + root.modpack-version-id;
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-secondary;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+
+                        Text {
+                            text: "Update to version:";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+
+                        CrabDropdown {
+                            horizontal-stretch: 1;
+                            height: Theme.button-height;
+                            options: root.modpack-version-options;
+                            selected-id <=> root.modpack-selected-version-id;
+                            selected-label: root.modpack-selected-version-label != ""
+                                ? root.modpack-selected-version-label
+                                : (root.modpack-loading-versions ? "Loading versions..." : "No versions available");
+                            enabled: !root.modpack-loading-versions && !root.modpack-updating && root.modpack-version-options.length > 0;
+                            selected(vid) => { root.modpack-version-selected(vid); }
+                        }
+
+                        CrabButton {
+                            text: root.modpack-updating ? "Updating..." : "Update Pack";
+                            icon: Theme.icon-refresh;
+                            has-icon: true;
+                            variant: "primary";
+                            enabled: !root.is-running
+                                && !root.modpack-updating
+                                && !root.modpack-loading-versions
+                                && root.modpack-selected-version-id != ""
+                                && root.modpack-selected-version-id != root.modpack-version-id;
+                            clicked => { root.modpack-update-clicked(); }
+                        }
+
+                        CrabButton {
+                            text: "Update From File";
+                            icon: Theme.icon-folder;
+                            has-icon: true;
+                            variant: "secondary";
+                            enabled: !root.is-running && !root.modpack-updating;
+                            clicked => { root.modpack-update-from-file-clicked(); }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.space-sm;
+                        Text {
+                            text: "Changelog";
+                            font-size: Theme.font-sm;
+                            font-weight: 600;
+                            color: Theme.text-secondary;
+                            horizontal-stretch: 1;
+                        }
+                        if root.modpack-loading-versions: Text {
+                            text: "Checking Modrinth releases...";
+                            font-size: Theme.font-xs;
+                            color: Theme.text-secondary;
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        if root.modpack-changelog-blocks.length == 0 && root.modpack-changelog-plain == "": Text {
+                            text: "No changelog available for this version!";
+                            font-size: Theme.font-sm;
+                            color: Theme.text-secondary;
+                            x: Theme.space-md;
+                            y: Theme.space-md;
+                        }
+
+                        if root.modpack-changelog-blocks.length > 0 || root.modpack-changelog-plain != "": Flickable {
+                            width: parent.width;
+                            height: parent.height;
+                            content-width: self.width;
+                            content-height: mp-changelog-col.preferred-height + 24px;
+
+                            mp-changelog-col := VerticalLayout {
+                                width: parent.width;
+                                padding: Theme.space-md;
+                                spacing: Theme.space-xs;
+                                alignment: start;
+
+                                if root.modpack-changelog-blocks.length == 0: Text {
+                                    text: root.modpack-changelog-plain;
+                                    font-size: Theme.font-sm;
+                                    color: Theme.text-primary;
+                                    wrap: word-wrap;
+                                }
+
+                                for blk in root.modpack-changelog-blocks: VerticalLayout {
+                                    spacing: 2px;
+
+                                    if blk.kind == "heading": Text {
+                                        text: blk.text;
+                                        font-size: Theme.font-lg;
+                                        font-weight: 700;
+                                        color: Theme.text-primary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if blk.kind == "subheading": Text {
+                                        text: blk.text;
+                                        font-size: Theme.font-md;
+                                        font-weight: 600;
+                                        color: Theme.text-primary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if blk.kind == "paragraph": Text {
+                                        text: blk.text;
+                                        font-size: Theme.font-sm;
+                                        color: Theme.text-primary;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if blk.kind == "bullet": HorizontalLayout {
+                                        spacing: 6px;
+                                        Text { text: "•"; font-size: Theme.font-sm; color: Theme.accent; }
+                                        Text {
+                                            text: blk.text;
+                                            font-size: Theme.font-sm;
+                                            color: Theme.text-primary;
+                                            horizontal-stretch: 1;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+
+                                    if blk.kind == "link": HorizontalLayout {
+                                        alignment: start;
+                                        CrabButton {
+                                            text: blk.text;
+                                            icon: Theme.icon-external-link;
+                                            has-icon: true;
+                                            variant: "ghost";
+                                            clicked => { root.modpack-open-url-clicked(blk.url); }
+                                        }
+                                    }
+
+                                    if blk.kind == "separator": Rectangle {
+                                        height: 1px;
+                                        background: Theme.border;
                                     }
                                 }
                             }
@@ -2833,7 +3149,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Change Version";
-                            icon: @image-url("../../assets/icons/layers.svg");
+                            icon: Theme.icon-layers;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running
@@ -2848,7 +3164,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Move Up";
-                            icon: @image-url("../../assets/icons/arrow-up.svg");
+                            icon: Theme.icon-arrow-up;
                             has-icon: true;
                             variant: "ghost";
                             enabled: root.selected-component-uid != "" && !root.is-running;
@@ -2858,7 +3174,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Move Down";
-                            icon: @image-url("../../assets/icons/arrow-down.svg");
+                            icon: Theme.icon-arrow-down;
                             has-icon: true;
                             variant: "ghost";
                             enabled: root.selected-component-uid != "" && !root.is-running;
@@ -2868,7 +3184,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Remove";
-                            icon: @image-url("../../assets/icons/trash.svg");
+                            icon: Theme.icon-trash;
                             has-icon: true;
                             variant: "flat-danger";
                             enabled: root.selected-component-uid != "" && !root.is-running;
@@ -2880,7 +3196,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Customize";
-                            icon: @image-url("../../assets/icons/sliders-horizontal.svg");
+                            icon: Theme.icon-sliders-horizontal;
                             has-icon: true;
                             variant: "ghost";
                             enabled: root.selected-component-uid != "" && !root.is-running;
@@ -2890,7 +3206,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Edit";
-                            icon: @image-url("../../assets/icons/edit.svg");
+                            icon: Theme.icon-edit;
                             has-icon: true;
                             variant: "ghost";
                             enabled: root.selected-component-uid != "";
@@ -2900,7 +3216,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Revert";
-                            icon: @image-url("../../assets/icons/refresh.svg");
+                            icon: Theme.icon-refresh;
                             has-icon: true;
                             variant: "ghost";
                             enabled: root.selected-component-uid != "" && !root.is-running;
@@ -2912,7 +3228,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Install Loader";
-                            icon: @image-url("../../assets/icons/download.svg");
+                            icon: Theme.icon-download;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -2922,7 +3238,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Add to Minecraft.jar";
-                            icon: @image-url("../../assets/icons/plus.svg");
+                            icon: Theme.icon-plus;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -2932,7 +3248,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Replace Minecraft.jar";
-                            icon: @image-url("../../assets/icons/copy.svg");
+                            icon: Theme.icon-copy;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -2942,7 +3258,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Add Agents";
-                            icon: @image-url("../../assets/icons/wrench.svg");
+                            icon: Theme.icon-wrench;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -2952,7 +3268,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Add Empty";
-                            icon: @image-url("../../assets/icons/plus.svg");
+                            icon: Theme.icon-plus;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -2962,7 +3278,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Import Components";
-                            icon: @image-url("../../assets/icons/download.svg");
+                            icon: Theme.icon-download;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -2974,7 +3290,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Open .minecraft";
-                            icon: @image-url("../../assets/icons/folder.svg");
+                            icon: Theme.icon-folder;
                             has-icon: true;
                             variant: "ghost";
                             align-left: true;
@@ -2983,7 +3299,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Open Libraries";
-                            icon: @image-url("../../assets/icons/folder.svg");
+                            icon: Theme.icon-folder;
                             has-icon: true;
                             variant: "ghost";
                             align-left: true;
@@ -2994,7 +3310,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Reload";
-                            icon: @image-url("../../assets/icons/refresh.svg");
+                            icon: Theme.icon-refresh;
                             has-icon: true;
                             variant: "ghost";
                             align-left: true;
@@ -3003,7 +3319,7 @@ export component EditInstanceWindow inherits Window {
 
                         CrabButton {
                             text: "Download All";
-                            icon: @image-url("../../assets/icons/download.svg");
+                            icon: Theme.icon-download;
                             has-icon: true;
                             variant: "ghost";
                             enabled: !root.is-running;
@@ -3020,7 +3336,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Download Mods";
-                        icon: @image-url("../../assets/icons/download.svg");
+                        icon: Theme.icon-download;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.has-modloader;
@@ -3064,7 +3380,7 @@ export component EditInstanceWindow inherits Window {
                                     VerticalLayout {
                                         alignment: center;
                                         Image {
-                                            source: @image-url("../../assets/icons/refresh.svg");
+                                            source: Theme.icon-refresh;
                                             width: 14px;
                                             height: 14px;
                                             colorize: Theme.icon-primary;
@@ -3103,7 +3419,7 @@ export component EditInstanceWindow inherits Window {
                                 Image {
                                     x: (parent.width - self.width) / 2;
                                     y: (parent.height - self.height) / 2;
-                                    source: @image-url("../../assets/icons/chevron-down.svg");
+                                    source: Theme.icon-chevron-down;
                                     width: 13px;
                                     height: 13px;
                                     colorize: Theme.icon-secondary;
@@ -3124,7 +3440,7 @@ export component EditInstanceWindow inherits Window {
 
                             CrabButton {
                                 text: "Check for Updates";
-                                icon: @image-url("../../assets/icons/refresh.svg");
+                                icon: Theme.icon-refresh;
                                 has-icon: true;
                                 variant: "ghost";
                                 align-left: true;
@@ -3137,7 +3453,7 @@ export component EditInstanceWindow inherits Window {
 
                             CrabButton {
                                 text: "Verify Dependencies";
-                                icon: @image-url("../../assets/icons/puzzle.svg");
+                                icon: Theme.icon-puzzle;
                                 has-icon: true;
                                 variant: "ghost";
                                 align-left: true;
@@ -3152,7 +3468,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Change Version";
-                        icon: @image-url("../../assets/icons/layers.svg");
+                        icon: Theme.icon-layers;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-mod-file != "";
@@ -3164,7 +3480,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Add File";
-                        icon: @image-url("../../assets/icons/plus.svg");
+                        icon: Theme.icon-plus;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.has-modloader;
@@ -3174,7 +3490,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Remove";
-                        icon: @image-url("../../assets/icons/trash.svg");
+                        icon: Theme.icon-trash;
                         has-icon: true;
                         variant: "flat-danger";
                         enabled: root.selected-mod-file != "";
@@ -3184,7 +3500,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Enable / Disable";
-                        icon: @image-url("../../assets/icons/check.svg");
+                        icon: Theme.icon-check;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-mod-file != "";
@@ -3196,7 +3512,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "View Homepage";
-                        icon: @image-url("../../assets/icons/external-link.svg");
+                        icon: Theme.icon-external-link;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-mod-file != "";
@@ -3206,7 +3522,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Export List";
-                        icon: @image-url("../../assets/icons/copy.svg");
+                        icon: Theme.icon-copy;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3217,7 +3533,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Open Mods Folder";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3226,7 +3542,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Open Configs Folder";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3241,7 +3557,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Download";
-                        icon: @image-url("../../assets/icons/download.svg");
+                        icon: Theme.icon-download;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3250,7 +3566,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Check for Updates";
-                        icon: @image-url("../../assets/icons/refresh.svg");
+                        icon: Theme.icon-refresh;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3259,7 +3575,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Change Version";
-                        icon: @image-url("../../assets/icons/layers.svg");
+                        icon: Theme.icon-layers;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-texture-pack != "";
@@ -3271,7 +3587,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Add File";
-                        icon: @image-url("../../assets/icons/plus.svg");
+                        icon: Theme.icon-plus;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3280,7 +3596,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Remove";
-                        icon: @image-url("../../assets/icons/trash.svg");
+                        icon: Theme.icon-trash;
                         has-icon: true;
                         variant: "flat-danger";
                         enabled: root.selected-texture-pack != "";
@@ -3292,7 +3608,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "View Homepage";
-                        icon: @image-url("../../assets/icons/external-link.svg");
+                        icon: Theme.icon-external-link;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-texture-pack != "";
@@ -3304,7 +3620,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Open Folder";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3319,7 +3635,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Download";
-                        icon: @image-url("../../assets/icons/download.svg");
+                        icon: Theme.icon-download;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3328,7 +3644,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Check for Updates";
-                        icon: @image-url("../../assets/icons/refresh.svg");
+                        icon: Theme.icon-refresh;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3337,7 +3653,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Change Version";
-                        icon: @image-url("../../assets/icons/layers.svg");
+                        icon: Theme.icon-layers;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-shader-pack != "";
@@ -3349,7 +3665,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Add File";
-                        icon: @image-url("../../assets/icons/plus.svg");
+                        icon: Theme.icon-plus;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3358,7 +3674,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Remove";
-                        icon: @image-url("../../assets/icons/trash.svg");
+                        icon: Theme.icon-trash;
                         has-icon: true;
                         variant: "flat-danger";
                         enabled: root.selected-shader-pack != "";
@@ -3370,7 +3686,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "View Homepage";
-                        icon: @image-url("../../assets/icons/external-link.svg");
+                        icon: Theme.icon-external-link;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-shader-pack != "";
@@ -3382,7 +3698,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Open Folder";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3397,7 +3713,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Add";
-                        icon: @image-url("../../assets/icons/plus.svg");
+                        icon: Theme.icon-plus;
                         has-icon: true;
                         variant: "ghost";
                         enabled: !root.is-running;
@@ -3407,7 +3723,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Rename";
-                        icon: @image-url("../../assets/icons/edit.svg");
+                        icon: Theme.icon-edit;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-world-folder != "" && !root.is-running;
@@ -3417,7 +3733,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Backup";
-                        icon: @image-url("../../assets/icons/copy.svg");
+                        icon: Theme.icon-copy;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-world-folder != "";
@@ -3427,7 +3743,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Delete";
-                        icon: @image-url("../../assets/icons/trash.svg");
+                        icon: Theme.icon-trash;
                         has-icon: true;
                         variant: "flat-danger";
                         enabled: root.selected-world-folder != "" && !root.is-running;
@@ -3439,7 +3755,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Data Packs";
-                        icon: @image-url("../../assets/icons/layers.svg");
+                        icon: Theme.icon-layers;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-world-folder != "";
@@ -3449,7 +3765,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Reset Icon";
-                        icon: @image-url("../../assets/icons/x.svg");
+                        icon: Theme.icon-x;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-world-folder != "";
@@ -3459,7 +3775,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Copy Seed";
-                        icon: @image-url("../../assets/icons/copy.svg");
+                        icon: Theme.icon-copy;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-world-folder != "";
@@ -3471,7 +3787,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Refresh";
-                        icon: @image-url("../../assets/icons/refresh.svg");
+                        icon: Theme.icon-refresh;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3480,7 +3796,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "View Folder";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3495,7 +3811,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Add";
-                        icon: @image-url("../../assets/icons/plus.svg");
+                        icon: Theme.icon-plus;
                         has-icon: true;
                         variant: "ghost";
                         enabled: !root.is-running;
@@ -3505,7 +3821,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Rename";
-                        icon: @image-url("../../assets/icons/edit.svg");
+                        icon: Theme.icon-edit;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-server-index >= 0 && !root.is-running;
@@ -3517,7 +3833,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Delete";
-                        icon: @image-url("../../assets/icons/trash.svg");
+                        icon: Theme.icon-trash;
                         has-icon: true;
                         variant: "flat-danger";
                         enabled: root.selected-server-index >= 0 && !root.is-running;
@@ -3531,7 +3847,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Move Up";
-                        icon: @image-url("../../assets/icons/arrow-up.svg");
+                        icon: Theme.icon-arrow-up;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-server-index > 0 && !root.is-running;
@@ -3541,7 +3857,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Move Down";
-                        icon: @image-url("../../assets/icons/arrow-down.svg");
+                        icon: Theme.icon-arrow-down;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-server-index >= 0 && root.selected-server-index < root.servers.length - 1 && !root.is-running;
@@ -3553,7 +3869,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Join";
-                        icon: @image-url("../../assets/icons/play.svg");
+                        icon: Theme.icon-play;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-server-index >= 0 && root.server-ip-input != "" && !root.is-running;
@@ -3563,7 +3879,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Refresh";
-                        icon: @image-url("../../assets/icons/refresh.svg");
+                        icon: Theme.icon-refresh;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3578,7 +3894,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Copy Image";
-                        icon: @image-url("../../assets/icons/copy.svg");
+                        icon: Theme.icon-copy;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-screenshot-file != "";
@@ -3588,7 +3904,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Copy File(s)";
-                        icon: @image-url("../../assets/icons/copy.svg");
+                        icon: Theme.icon-copy;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-screenshot-file != "";
@@ -3598,7 +3914,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Delete";
-                        icon: @image-url("../../assets/icons/trash.svg");
+                        icon: Theme.icon-trash;
                         has-icon: true;
                         variant: "flat-danger";
                         enabled: root.selected-screenshot-file != "";
@@ -3608,7 +3924,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Rename";
-                        icon: @image-url("../../assets/icons/edit.svg");
+                        icon: Theme.icon-edit;
                         has-icon: true;
                         variant: "ghost";
                         enabled: root.selected-screenshot-file != "";
@@ -3623,7 +3939,7 @@ export component EditInstanceWindow inherits Window {
 
                     CrabButton {
                         text: "Open Folder";
-                        icon: @image-url("../../assets/icons/folder.svg");
+                        icon: Theme.icon-folder;
                         has-icon: true;
                         variant: "ghost";
                         align-left: true;
@@ -3650,6 +3966,18 @@ export component EditInstanceWindow inherits Window {
                 padding-right: Theme.space-md;
                 spacing: Theme.space-sm;
 
+                CrabButton {
+                    text: root.is-running ? "Running" : "Launch";
+                    icon: Theme.icon-play;
+                    has-icon: true;
+                    variant: "primary";
+                    enabled: !root.is-running && !root.modpack-updating && root.instance-name != "";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.launch-clicked();
+                    }
+                }
+
                 Text {
                     text: root.error-message != "" ? root.error-message : root.status-message;
                     font-size: Theme.font-xs;
@@ -3660,14 +3988,25 @@ export component EditInstanceWindow inherits Window {
                 }
 
                 CrabButton {
+                    text: "Close";
+                    icon: Theme.icon-x;
+                    has-icon: true;
+                    variant: "secondary";
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        root.cancel-clicked();
+                    }
+                }
+
+                CrabButton {
                     text: "OK";
-                    icon: @image-url("../../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "primary";
                     enabled: root.instance-name != "";
                     y: (parent.height - self.height) / 2;
                     clicked => {
-                        root.cancel-clicked();
+                        root.ok-clicked();
                     }
                 }
             }

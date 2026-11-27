@@ -1,6 +1,7 @@
 import { Theme } from "../theme.slint";
 import { Strings } from "../strings.slint";
 import { CrabButton } from "../components/button.slint";
+import { ChevronIcon } from "../components/chevron.slint";
 
 /// Painel lateral compacto de ações da instância (referência: Prism Launcher).
 export component InstanceSidebar inherits Rectangle {
@@ -23,6 +24,7 @@ export component InstanceSidebar inherits Rectangle {
     in property <length> blur-offset-y: 0px;
 
     callback launch-clicked();
+    callback launch-menu-toggled(length, length, length, length); // x, y, w, h
     callback stop-clicked();
     callback console-clicked();
     callback install-clicked();
@@ -39,22 +41,24 @@ export component InstanceSidebar inherits Rectangle {
         || root.install-status-code == "failed";
 
     width: Theme.sidebar-width;
-    background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
+    background: Theme.bg-secondary;
     clip: true;
 
-    // Blur real do wallpaper Vice alinhado às coordenadas da janela principal
-    if Theme.is-vice-theme: Image {
+    // Blur real do wallpaper Vice alinhado às coordenadas da janela principal (desativado quando Disable Special Effects está ativo)
+    if Theme.is-vice-theme && !Theme.disable-special-effects && Theme.wallpaper-opacity > 0.0: Image {
         x: -root.blur-offset-x;
         y: -root.blur-offset-y;
         width: root.window-width;
         height: root.window-height;
         source: @image-url("../../assets/themes/vice/wallpaper-blurred.png");
         image-fit: cover;
+        opacity: Theme.wallpaper-opacity;
     }
-    if Theme.is-vice-theme: Rectangle {
+    if Theme.is-vice-theme && !Theme.disable-special-effects && Theme.wallpaper-opacity > 0.0: Rectangle {
         width: parent.width;
         height: parent.height;
         background: #30253888;
+        opacity: Theme.wallpaper-opacity;
     }
 
     Rectangle {
@@ -100,8 +104,8 @@ export component InstanceSidebar inherits Rectangle {
             HorizontalLayout {
                 alignment: center;
                 Rectangle {
-                    width: 64px;
-                    height: 64px;
+                    width: 80px;
+                    height: 80px;
                     border-radius: Theme.radius-sm;
                     background: icon-touch.has-hover ? Theme.bg-interactive : transparent;
                     icon-touch := TouchArea {
@@ -111,17 +115,17 @@ export component InstanceSidebar inherits Rectangle {
                     if !root.has-custom-icon: Image {
                         x: 4px;
                         y: 4px;
-                        source: @image-url("../../assets/icons/cube.svg");
-                        width: 56px;
-                        height: 56px;
+                        source: Theme.icon-cube;
+                        width: 72px;
+                        height: 72px;
                         colorize: Theme.accent;
                     }
                     if root.has-custom-icon: Image {
                         x: 4px;
                         y: 4px;
                         source: root.custom-icon;
-                        width: 56px;
-                        height: 56px;
+                        width: 72px;
+                        height: 72px;
                         image-fit: contain;
                     }
                 }
@@ -186,28 +190,235 @@ export component InstanceSidebar inherits Rectangle {
             background: Theme.border;
         }
 
-        // Ação principal (Launch / Stop)
+        // Ação principal (Launch split-button com chevron / Stop)
         VerticalLayout {
             spacing: 2px;
 
-            if !root.is-running: CrabButton {
-                text: Strings.launch;
-                icon: @image-url("../../assets/icons/play.svg");
-                has-icon: true;
-                variant: "primary";
-                enabled: !root.is-installing;
-                align-left: true;
-                clicked => {
-                    root.launch-clicked();
+            if !root.is-running: launch-split := Rectangle {
+                height: Theme.button-height;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: root.is-installing ? Theme.border-subtle : Theme.accent;
+                background: root.is-installing ? Theme.bg-secondary : Theme.accent;
+                clip: true;
+
+                private property <bool> main-tip-shown: false;
+                private property <bool> drop-tip-shown: false;
+                private property <length> main-tip-x: 0px;
+                private property <length> main-tip-y: 0px;
+                private property <length> drop-tip-x: 0px;
+                private property <length> drop-tip-y: 0px;
+
+                Timer {
+                    interval: 1000ms;
+                    running: launch-main-touch.has-hover && !launch-main-touch.pressed && !launch-split.main-tip-shown;
+                    triggered => {
+                        launch-split.main-tip-x = launch-main-touch.mouse-x;
+                        launch-split.main-tip-y = launch-main-touch.mouse-y;
+                        launch-split.main-tip-shown = true;
+                        launch-main-tip.show();
+                    }
+                }
+
+                Timer {
+                    interval: 1000ms;
+                    running: launch-drop-touch.has-hover && !launch-drop-touch.pressed && !launch-split.drop-tip-shown;
+                    triggered => {
+                        launch-split.drop-tip-x = launch-drop-touch.mouse-x;
+                        launch-split.drop-tip-y = launch-drop-touch.mouse-y;
+                        launch-split.drop-tip-shown = true;
+                        launch-drop-tip.show();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 0px;
+
+                    // Parte principal: Launch imediato
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: root.is-installing
+                            ? transparent
+                            : launch-main-touch.pressed
+                                ? Theme.accent-pressed
+                                : launch-main-touch.has-hover
+                                    ? Theme.accent-hover
+                                    : transparent;
+
+                        launch-main-touch := TouchArea {
+                            enabled: !root.is-installing;
+                            mouse-cursor: !root.is-installing ? pointer : default;
+                            moved => {
+                                launch-split.main-tip-x = self.mouse-x;
+                                launch-split.main-tip-y = self.mouse-y;
+                            }
+                            clicked => {
+                                if (launch-split.main-tip-shown) {
+                                    launch-split.main-tip-shown = false;
+                                    launch-main-tip.close();
+                                }
+                                root.launch-clicked();
+                            }
+                            changed has-hover => {
+                                if (!self.has-hover && launch-split.main-tip-shown) {
+                                    launch-split.main-tip-shown = false;
+                                    launch-main-tip.close();
+                                }
+                            }
+                            changed pressed => {
+                                if (self.pressed && launch-split.main-tip-shown) {
+                                    launch-split.main-tip-shown = false;
+                                    launch-main-tip.close();
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: Theme.space-md;
+                            padding-right: Theme.space-sm;
+                            spacing: 8px;
+                            alignment: start;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: Theme.icon-play;
+                                    width: 15px;
+                                    height: 15px;
+                                    colorize: root.is-installing ? Theme.text-disabled : Theme.text-on-accent;
+                                }
+                            }
+
+                            Text {
+                                text: Strings.launch;
+                                font-size: Theme.font-md;
+                                font-weight: 600;
+                                color: root.is-installing ? Theme.text-disabled : Theme.text-on-accent;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Separador vertical sutil entre o botão Launch e o chevron
+                    Rectangle {
+                        width: 1px;
+                        background: root.is-installing ? Theme.border-subtle : #00000028;
+                    }
+
+                    // Botão chevron para abrir o Droplist (Launch / Launch Offline / Launch Demo)
+                    Rectangle {
+                        width: 28px;
+                        background: root.is-installing
+                            ? transparent
+                            : launch-drop-touch.pressed
+                                ? Theme.accent-pressed
+                                : launch-drop-touch.has-hover
+                                    ? Theme.accent-hover
+                                    : transparent;
+
+                        launch-drop-touch := TouchArea {
+                            enabled: !root.is-installing;
+                            mouse-cursor: !root.is-installing ? pointer : default;
+                            moved => {
+                                launch-split.drop-tip-x = self.mouse-x;
+                                launch-split.drop-tip-y = self.mouse-y;
+                            }
+                            clicked => {
+                                if (launch-split.drop-tip-shown) {
+                                    launch-split.drop-tip-shown = false;
+                                    launch-drop-tip.close();
+                                }
+                                root.launch-menu-toggled(
+                                    launch-split.absolute-position.x,
+                                    launch-split.absolute-position.y,
+                                    launch-split.width,
+                                    launch-split.height
+                                );
+                            }
+                            changed has-hover => {
+                                if (!self.has-hover && launch-split.drop-tip-shown) {
+                                    launch-split.drop-tip-shown = false;
+                                    launch-drop-tip.close();
+                                }
+                            }
+                            changed pressed => {
+                                if (self.pressed && launch-split.drop-tip-shown) {
+                                    launch-split.drop-tip-shown = false;
+                                    launch-drop-tip.close();
+                                }
+                            }
+                        }
+
+                        Image {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: 13px;
+                            height: 13px;
+                            source: Theme.icon-chevron-down;
+                            colorize: root.is-installing ? Theme.text-disabled : Theme.text-on-accent;
+                        }
+                    }
+                }
+
+                launch-main-tip := PopupWindow {
+                    close-policy: no-auto-close;
+                    x: min(launch-split.main-tip-x + 12px, launch-split.width - lmt-box.preferred-width);
+                    y: launch-split.main-tip-y + 18px;
+                    width: lmt-box.preferred-width;
+                    height: lmt-box.preferred-height;
+                    lmt-box := Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            padding-top: 4px;
+                            padding-bottom: 4px;
+                            Text {
+                                text: "Launch instance (Ctrl+O)";
+                                font-size: 11px;
+                                color: Theme.text-primary;
+                            }
+                        }
+                    }
+                }
+
+                launch-drop-tip := PopupWindow {
+                    close-policy: no-auto-close;
+                    x: min((launch-split.width - 28px) + launch-split.drop-tip-x + 12px, launch-split.width - ldt-box.preferred-width);
+                    y: launch-split.drop-tip-y + 18px;
+                    width: ldt-box.preferred-width;
+                    height: ldt-box.preferred-height;
+                    ldt-box := Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-secondary;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            padding-top: 4px;
+                            padding-bottom: 4px;
+                            Text {
+                                text: "Launch options (Offline / Demo)";
+                                font-size: 11px;
+                                color: Theme.text-primary;
+                            }
+                        }
+                    }
                 }
             }
 
             if root.is-running: CrabButton {
                 text: "Stop Game";
-                icon: @image-url("../../assets/icons/square.svg");
+                icon: Theme.icon-square;
                 has-icon: true;
                 variant: "danger";
                 align-left: true;
+                tooltip: "Stop running Minecraft process (Ctrl+K)";
+                tooltip-align: "end";
                 clicked => {
                     root.stop-clicked();
                 }
@@ -215,10 +426,12 @@ export component InstanceSidebar inherits Rectangle {
 
             if root.is-running: CrabButton {
                 text: "View Console";
-                icon: @image-url("../../assets/icons/terminal.svg");
+                icon: Theme.icon-terminal;
                 has-icon: true;
                 variant: "ghost";
                 align-left: true;
+                tooltip: "Open live Minecraft console output";
+                tooltip-align: "end";
                 clicked => {
                     root.console-clicked();
                 }
@@ -228,11 +441,13 @@ export component InstanceSidebar inherits Rectangle {
                 text: root.install-status-code == "not_installed"
                     ? Strings.install-instance
                     : Strings.retry-install;
-                icon: @image-url("../../assets/icons/download.svg");
+                icon: Theme.icon-download;
                 has-icon: true;
                 variant: "ghost";
                 enabled: !root.is-installing;
                 align-left: true;
+                tooltip: "Download and install game files";
+                tooltip-align: "end";
                 clicked => {
                     root.install-clicked();
                 }
@@ -250,10 +465,12 @@ export component InstanceSidebar inherits Rectangle {
 
             CrabButton {
                 text: Strings.edit-instance;
-                icon: @image-url("../../assets/icons/edit.svg");
+                icon: Theme.icon-edit;
                 has-icon: true;
                 variant: "ghost";
                 align-left: true;
+                tooltip: "Edit mods, worlds, and settings (Ctrl+I)";
+                tooltip-align: "end";
                 clicked => {
                     root.edit-clicked();
                 }
@@ -261,10 +478,12 @@ export component InstanceSidebar inherits Rectangle {
 
             CrabButton {
                 text: "Change Group";
-                icon: @image-url("../../assets/icons/folder-plus.svg");
+                icon: Theme.icon-folder-plus;
                 has-icon: true;
                 variant: "ghost";
                 align-left: true;
+                tooltip: "Move instance to another group (Ctrl+G)";
+                tooltip-align: "end";
                 clicked => {
                     root.change-group-clicked();
                 }
@@ -272,10 +491,12 @@ export component InstanceSidebar inherits Rectangle {
 
             CrabButton {
                 text: Strings.open-folder;
-                icon: @image-url("../../assets/icons/folder.svg");
+                icon: Theme.icon-folder;
                 has-icon: true;
                 variant: "ghost";
                 align-left: true;
+                tooltip: "Open instance folder in file manager";
+                tooltip-align: "end";
                 clicked => {
                     root.open-folder-clicked();
                 }
@@ -285,11 +506,13 @@ export component InstanceSidebar inherits Rectangle {
                 || root.install-status-code == "incomplete"
                 || root.install-status-code == "failed": CrabButton {
                 text: Strings.repair-instance;
-                icon: @image-url("../../assets/icons/wrench.svg");
+                icon: Theme.icon-wrench;
                 has-icon: true;
                 variant: "ghost";
                 enabled: !root.is-installing && !root.is-running;
                 align-left: true;
+                tooltip: "Re-verify libraries and repair game files";
+                tooltip-align: "end";
                 clicked => {
                     root.repair-clicked();
                 }
@@ -304,11 +527,14 @@ export component InstanceSidebar inherits Rectangle {
         // Ação destrutiva discreta (texto/ícone vermelho no hover, sem botão gigante isolado)
         CrabButton {
             text: Strings.delete-instance;
-            icon: @image-url("../../assets/icons/trash.svg");
+            icon: Theme.icon-trash;
             has-icon: true;
             variant: "flat-danger";
             enabled: !root.is-running;
             align-left: true;
+            tooltip: "Permanently delete this instance (Del)";
+            tooltip-align: "end";
+            tooltip-above: true;
             clicked => {
                 root.delete-clicked();
             }

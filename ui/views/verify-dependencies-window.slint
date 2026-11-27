@@ -18,7 +18,7 @@ export struct DependencyIssueItem {
 
 /// Janela independente de verificação e instalação de dependências obrigatórias ausentes/incompatíveis.
 export component VerifyDependenciesWindow inherits Window {
-    title: "Verify Dependencies — Crab";
+    title: "Verify Dependencies — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 620px;
@@ -101,7 +101,7 @@ export component VerifyDependenciesWindow inherits Window {
                                     ? @image-url("../../assets/providers/modrinth.svg")
                                     : item.provider == "CurseForge"
                                         ? @image-url("../../assets/providers/curseforge.svg")
-                                        : @image-url("../../assets/icons/puzzle.svg");
+                                        : Theme.icon-puzzle;
                                 width: 24px;
                                 height: 24px;
                                 image-fit: contain;
@@ -172,7 +172,7 @@ export component VerifyDependenciesWindow inherits Window {
 
             CrabButton {
                 text: "Close";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancelled(); }
@@ -180,7 +180,7 @@ export component VerifyDependenciesWindow inherits Window {
 
             CrabButton {
                 text: "Install Selected";
-                icon: @image-url("../../assets/icons/download.svg");
+                icon: Theme.icon-download;
                 has-icon: true;
                 variant: "primary";
                 enabled: !root.is-checking && root.issues.length > 0;

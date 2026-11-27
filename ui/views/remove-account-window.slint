@@ -3,7 +3,7 @@ import { CrabButton } from "../components/button.slint";
 
 /// Janela dedicada de confirmação para remoção de contas (Offline ou Microsoft).
 export component RemoveAccountWindow inherits Window {
-    title: "Remove Account — Crab";
+    title: "Remove Account — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 420px;
@@ -97,7 +97,7 @@ export component RemoveAccountWindow inherits Window {
 
                 CrabButton {
                     text: "Cancel";
-                    icon: @image-url("../../assets/icons/x.svg");
+                    icon: Theme.icon-x;
                     has-icon: true;
                     variant: "secondary";
                     clicked => { root.cancel-clicked(); }
@@ -105,7 +105,7 @@ export component RemoveAccountWindow inherits Window {
 
                 CrabButton {
                     text: "Remove Account";
-                    icon: @image-url("../../assets/icons/trash.svg");
+                    icon: Theme.icon-trash;
                     has-icon: true;
                     variant: "danger";
                     clicked => { root.confirm-remove(root.account-id); }

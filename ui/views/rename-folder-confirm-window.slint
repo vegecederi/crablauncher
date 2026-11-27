@@ -1,0 +1,88 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+/// Janela independente de confirmação ao renomear instância quando a política é "Ask what to do".
+export component RenameFolderConfirmWindow inherits Window {
+    title: "Rename Instance Folder — Crab Launcher";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 440px;
+    preferred-height: 214px;
+    min-width: 400px;
+    min-height: 196px;
+    background: Theme.bg-secondary;
+
+    in-out property <string> instance-id: "";
+    in-out property <string> old-name: "";
+    in-out property <string> new-name: "";
+    in-out property <string> current-folder: "";
+    in-out property <string> target-folder: "";
+
+    callback rename-folder-clicked(string, string);
+    callback keep-folder-clicked(string, string);
+    callback cancel-clicked();
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Rename instance folder?";
+        subtitle: "Do you also want to rename the physical folder for '" + root.old-name + "'?";
+        escape-pressed => { root.cancel-clicked(); }
+
+        Rectangle {
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-primary;
+            border-width: 1px;
+            border-color: Theme.border;
+
+            VerticalLayout {
+                padding: Theme.space-sm;
+                spacing: 4px;
+
+                Text {
+                    text: "New Name: " + root.new-name;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    overflow: elide;
+                }
+                Text {
+                    text: "Current Folder: " + root.current-folder;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    overflow: elide;
+                }
+                Text {
+                    text: "New Folder: " + root.target-folder;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-secondary;
+                    overflow: elide;
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+
+            CrabButton {
+                text: "Cancel";
+                variant: "ghost";
+                clicked => { root.cancel-clicked(); }
+            }
+            CrabButton {
+                text: "Keep Folder";
+                variant: "secondary";
+                clicked => { root.keep-folder-clicked(root.instance-id, root.new-name); }
+            }
+            CrabButton {
+                text: "Rename Folder";
+                variant: "primary";
+                clicked => { root.rename-folder-clicked(root.instance-id, root.new-name); }
+            }
+        }
+    }
+}

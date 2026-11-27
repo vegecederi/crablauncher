@@ -1,11 +1,16 @@
-// Sistema de design dinâmico do Crab (controlado pelo Theme Engine em Rust).
+// Sistema de design dinâmico do Crab Launcher (controlado pelo Theme Engine em Rust).
 import "../assets/fonts/inter/Inter.ttf";
 import "../assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf";
+import "../assets/fonts/fira-code/FiraCode-Regular.ttf";
+import "../assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf";
+import "../assets/fonts/source-code-pro/SourceCodePro-Regular.ttf";
 import "../assets/themes/vice/fonts/pricedown.otf";
 
 export global Theme {
-    // Tema especial Vice + Icon Pack ativo
+    // Tema especial Vice + efeitos visuais + Icon Pack ativo
     in-out property <bool> is-vice-theme: false;
+    in-out property <bool> disable-special-effects: false;
+    in-out property <float> wallpaper-opacity: 1.0;
     in-out property <string> display-font-family: "Inter";
     in-out property <color> chrome-bg: #222222;
     in-out property <string> icon-pack-id: "lucide";
@@ -68,7 +73,7 @@ export global Theme {
     // Dimensões padrão de layout
     out property <length> toolbar-height: 44px;
     out property <length> toolbar-button-height: 32px;
-    out property <length> statusbar-height: 26px;
+    out property <length> statusbar-height: 28px;
     out property <length> sidebar-width: 184px;
     out property <length> button-height: 30px;
 
@@ -79,4 +84,46 @@ export global Theme {
     out property <length> font-md: 14px;
     out property <length> font-lg: 16px;
     out property <length> font-xl: 18px;
+
+    // Ícones dinâmicos controlados pelo Icon Pack ativo (atualizados em tempo real via ThemeBroadcaster)
+    in-out property <image> icon-arrow-down: @image-url("../assets/icons/arrow-down.svg");
+    in-out property <image> icon-arrow-up: @image-url("../assets/icons/arrow-up.svg");
+    in-out property <image> icon-calendar: @image-url("../assets/icons/calendar.svg");
+    in-out property <image> icon-check: @image-url("../assets/icons/check.svg");
+    in-out property <image> icon-chevron-down: @image-url("../assets/icons/chevron-down.svg");
+    in-out property <image> icon-chevron-left: @image-url("../assets/icons/chevron-left.svg");
+    in-out property <image> icon-chevron-right: @image-url("../assets/icons/chevron-right.svg");
+    in-out property <image> icon-chevron-up: @image-url("../assets/icons/chevron-up.svg");
+    in-out property <image> icon-clock: @image-url("../assets/icons/clock.svg");
+    in-out property <image> icon-coffee: @image-url("../assets/icons/coffee.svg");
+    in-out property <image> icon-copy: @image-url("../assets/icons/copy.svg");
+    in-out property <image> icon-cube: @image-url("../assets/icons/cube.svg");
+    in-out property <image> icon-download: @image-url("../assets/icons/download.svg");
+    in-out property <image> icon-edit: @image-url("../assets/icons/edit.svg");
+    in-out property <image> icon-external-link: @image-url("../assets/icons/external-link.svg");
+    in-out property <image> icon-file-text: @image-url("../assets/icons/file-text.svg");
+    in-out property <image> icon-flask-conical: @image-url("../assets/icons/flask-conical.svg");
+    in-out property <image> icon-folder-plus: @image-url("../assets/icons/folder-plus.svg");
+    in-out property <image> icon-folder: @image-url("../assets/icons/folder.svg");
+    in-out property <image> icon-info: @image-url("../assets/icons/info.svg");
+    in-out property <image> icon-layers: @image-url("../assets/icons/layers.svg");
+    in-out property <image> icon-layout-grid: @image-url("../assets/icons/layout-grid.svg");
+    in-out property <image> icon-palette: @image-url("../assets/icons/palette.svg");
+    in-out property <image> icon-play: @image-url("../assets/icons/play.svg");
+    in-out property <image> icon-plus: @image-url("../assets/icons/plus.svg");
+    in-out property <image> icon-puzzle: @image-url("../assets/icons/puzzle.svg");
+    in-out property <image> icon-refresh: @image-url("../assets/icons/refresh.svg");
+    in-out property <image> icon-save: @image-url("../assets/icons/save.svg");
+    in-out property <image> icon-scan-search: @image-url("../assets/icons/scan-search.svg");
+    in-out property <image> icon-search: @image-url("../assets/icons/search.svg");
+    in-out property <image> icon-settings: @image-url("../assets/icons/settings.svg");
+    in-out property <image> icon-sliders-horizontal: @image-url("../assets/icons/sliders-horizontal.svg");
+    in-out property <image> icon-square: @image-url("../assets/icons/square.svg");
+    in-out property <image> icon-star: @image-url("../assets/icons/star.svg");
+    in-out property <image> icon-terminal: @image-url("../assets/icons/terminal.svg");
+    in-out property <image> icon-trash: @image-url("../assets/icons/trash.svg");
+    in-out property <image> icon-user-plus: @image-url("../assets/icons/user-plus.svg");
+    in-out property <image> icon-user: @image-url("../assets/icons/user.svg");
+    in-out property <image> icon-wrench: @image-url("../assets/icons/wrench.svg");
+    in-out property <image> icon-x: @image-url("../assets/icons/x.svg");
 }

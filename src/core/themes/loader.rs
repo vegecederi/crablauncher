@@ -30,6 +30,14 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         include_str!("../../../assets/themes/amoled/theme.toml"),
     ),
     (
+        "evergreen",
+        include_str!("../../../assets/themes/evergreen/theme.toml"),
+    ),
+    (
+        "warm-paper",
+        include_str!("../../../assets/themes/warm-paper/theme.toml"),
+    ),
+    (
         "vice",
         include_str!("../../../assets/themes/vice/theme.toml"),
     ),
@@ -121,9 +129,12 @@ pub fn discover_and_load_themes(user_themes_dir: &Path) -> Vec<ResolvedTheme> {
         "crab-light",
         "crab-dark",
         "amoled",
+        "evergreen",
+        "warm-paper",
         "nord",
         "legacy",
         "deep-dark",
+        "vice",
     ];
     resolved.sort_by(|a, b| {
         let pos_a = order.iter().position(|&x| x == a.id).unwrap_or(99);

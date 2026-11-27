@@ -120,6 +120,30 @@ pub fn build_launch_plan(
     paths: &AppPaths,
     platform: &TargetPlatform,
 ) -> Result<LaunchPlan> {
+    build_launch_plan_with_options(
+        instance,
+        version,
+        java_executable,
+        credentials,
+        settings,
+        paths,
+        platform,
+        false,
+    )
+}
+
+/// Constrói o plano de execução com suporte explícito ao modo Demo (`is_demo_user` / `--demo`).
+#[allow(clippy::too_many_arguments)]
+pub fn build_launch_plan_with_options(
+    instance: &InstanceMetadata,
+    version: &VersionMetadata,
+    java_executable: PathBuf,
+    credentials: &LaunchCredentials,
+    settings: &EffectiveInstanceSettings,
+    paths: &AppPaths,
+    platform: &TargetPlatform,
+    is_demo: bool,
+) -> Result<LaunchPlan> {
     let mut main_class = version.main_class.clone().ok_or_else(|| {
         LauncherError::Launch(format!("Version '{}' is missing mainClass.", version.id))
     })?;
@@ -212,7 +236,7 @@ pub fn build_launch_plan(
     let use_resolution = settings.use_custom_resolution && !settings.start_fullscreen;
     let mut features = HashMap::new();
     features.insert("has_custom_resolution".into(), use_resolution);
-    features.insert("is_demo_user".into(), false);
+    features.insert("is_demo_user".into(), is_demo);
 
     let (meta_jvm_args, mut game_args) =
         resolve_version_arguments(version, platform, &features, &vars)?;
@@ -220,6 +244,11 @@ pub fn build_launch_plan(
     let supports_cli_window_flags = version.arguments.is_some()
         || game_args.iter().any(|a| a == "--version")
         || main_class.contains("net.minecraft.client.main.Main");
+
+    // Versões 1.6–1.12.2 usam `minecraftArguments` sem `rules/features`; injeta `--demo` explicitamente.
+    if is_demo && supports_cli_window_flags && !game_args.iter().any(|a| a == "--demo") {
+        game_args.push("--demo".to_string());
+    }
 
     let mut apply_legacy_fullscreen_in_options = false;
     if settings.start_fullscreen {

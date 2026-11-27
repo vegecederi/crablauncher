@@ -1,12 +1,16 @@
 import { Theme } from "theme.slint";
+import { UnsavedSettingsWindow } from "views/unsaved-settings-window.slint";
+import { ContextMenuWindow, FloatingMenuEntry } from "views/context-menu-window.slint";
 import { Strings } from "strings.slint";
 import { CrabButton } from "components/button.slint";
 import { CrabToolbar } from "components/toolbar.slint";
+import { CrabStatusBar } from "components/status-bar.slint";
 import { CrabTextInput } from "components/input.slint";
 import { ChevronIcon } from "components/chevron.slint";
 import { CrabContextMenu, ContextMenuHeader, ContextMenuDivider, ContextMenuItem, ContextMenuCheckItem } from "components/context-menu.slint";
 import { InstanceCard } from "components/instance-card.slint";
 import { InstanceSidebar } from "views/sidebar.slint";
+import { LaunchOfflineWindow, OfflineAccountEntry } from "views/launch-offline-window.slint";
 import { CopyInstanceWindow } from "views/copy-instance-dialog.slint";
 import { AddOfflineAccountWindow } from "views/add-offline-account-dialog.slint";
 import { ConfirmDialogWindow } from "views/confirm-dialog-window.slint";
@@ -15,7 +19,7 @@ import { ServerDialogWindow } from "views/server-dialog-window.slint";
 import { ReviewModsWindow, ReviewItemEntry } from "views/review-mods-window.slint";
 import { CheckUpdatesWindow, UpdateCandidateItem } from "views/check-updates-window.slint";
 import { VerifyDependenciesWindow, DependencyIssueItem } from "views/verify-dependencies-window.slint";
-import { AddInstanceWindow, VersionItem, AddLoaderVersionItem } from "views/add-instance-window.slint";
+import { AddInstanceWindow, VersionItem, AddLoaderVersionItem, PackResultItem } from "views/add-instance-window.slint";
 import { SettingsWindow, JavaRuntimeItem, ThemeItem, IconPackItem } from "views/settings-window.slint";
 import { AccountItem } from "views/accounts-window.slint";
 import { EditInstanceWindow, GroupOption, ComponentItem, LocalModItem, PackItem, WorldItem, ServerItem, ScreenshotItem, SessionLogItem, SessionLogLine } from "views/edit-instance-window.slint";
@@ -26,17 +30,24 @@ import { InstallLoaderWindow, LoaderVersionItem } from "views/install-loader-win
 import { ChangeGroupWindow } from "views/change-group-window.slint";
 import { SelectJavaWindow } from "views/select-java-window.slint";
 import { LaunchSummaryWindow, LaunchSummaryRowItem } from "views/launch-summary-window.slint";
-import { ManageJvmPresetsWindow, JvmPresetListItem } from "views/manage-jvm-presets-window.slint";
 import { SelectIconWindow, SelectableIconItem } from "views/select-icon-window.slint";
 import { TaskProgressWindow, DownloadTaskRow } from "views/task-progress-window.slint";
 import { DownloadModsWindow, RemoteModListItem, ReviewModItem, DescriptionBlockItem, FilterOptionItem } from "views/download-mods-window.slint";
 import { RenameInstanceWindow } from "views/rename-instance-window.slint";
+import { RenameFolderConfirmWindow } from "views/rename-folder-confirm-window.slint";
+import { JavaIncompatibleWindow } from "views/java-incompatible-window.slint";
 import { RemoveAccountWindow } from "views/remove-account-window.slint";
 import { ChangeVersionWindow, ChangeVersionRow } from "views/change-version-window.slint";
 import { DropdownOption } from "components/dropdown.slint";
 
 export {
+    UnsavedSettingsWindow,
+    ContextMenuWindow,
+    FloatingMenuEntry,
+    LaunchOfflineWindow,
+    OfflineAccountEntry,
     AddInstanceWindow,
+    PackResultItem,
     VersionItem,
     AddLoaderVersionItem,
     TaskProgressWindow,
@@ -47,6 +58,8 @@ export {
     DescriptionBlockItem,
     FilterOptionItem,
     RenameInstanceWindow,
+    RenameFolderConfirmWindow,
+    JavaIncompatibleWindow,
     RemoveAccountWindow,
     ConfirmDialogWindow,
     TextInputDialogWindow,
@@ -87,8 +100,6 @@ export {
     SelectJavaWindow,
     LaunchSummaryWindow,
     LaunchSummaryRowItem,
-    ManageJvmPresetsWindow,
-    JvmPresetListItem,
     SelectIconWindow,
     SelectableIconItem,
     DropdownOption,
@@ -124,7 +135,7 @@ export struct GroupSectionItem {
 }
 
 export component MainWindow inherits Window {
-    title: Strings.app-name;
+    title: Strings.app-name + " " + root.app-version;
     icon: @image-url("../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     forward-focus: key-scope;
@@ -154,11 +165,18 @@ export component MainWindow inherits Window {
     private property <string> prev-toolbar-position: "top";
     private property <length> folders-btn-x: 122px;
     private property <length> folders-btn-y: 0px;
-    private property <length> folders-btn-h: 32px;
+    private property <length> folders-btn-h: 44px;
+    private property <length> groups-btn-x: 220px;
+    private property <length> groups-btn-y: 0px;
+    private property <length> groups-btn-h: 44px;
     private property <length> accounts-btn-x: 0px;
     private property <length> accounts-btn-y: 0px;
     private property <length> accounts-btn-w: 120px;
-    private property <length> accounts-btn-h: 32px;
+    private property <length> accounts-btn-h: 44px;
+    private property <length> launch-menu-x: 0px;
+    private property <length> launch-menu-y: 0px;
+    private property <length> launch-menu-w: 164px;
+    private property <length> launch-menu-h: 30px;
     private property <string> prev-sidebar-position: "right";
     private property <string> prev-status-bar-position: "bottom";
     in-out property <string> dragging-component: ""; // "" | "toolbar" | "sidebar" | "statusbar"
@@ -210,11 +228,14 @@ export component MainWindow inherits Window {
     callback request-delete-instance-dialog(string, string);
     callback request-copy-instance-dialog(string, string);
     callback request-group-dialog(string, string, string);
+    callback manage-groups-clicked();
     callback request-delete-group-dialog(string, string);
     callback request-add-offline-account-dialog();
 
     in-out property <bool> show-folders-menu: false;
+    in-out property <bool> show-groups-menu: false;
     in-out property <bool> show-accounts-menu: false;
+    in-out property <bool> show-launch-menu: false;
     in-out property <bool> show-group-context-menu: false;
     in-out property <string> group-context-id: "";
     in-out property <string> group-context-name: "";
@@ -234,6 +255,11 @@ export component MainWindow inherits Window {
     in-out property <bool> show-toolbar-context-menu: false;
     in-out property <length> toolbar-context-x: 0px;
     in-out property <length> toolbar-context-y: 0px;
+    in property <bool> use-floating-context-menus: false;
+    callback open-floating-instance-menu(length, length);
+    callback open-floating-group-menu(string, string, bool, length, length);
+    callback open-floating-empty-menu(length, length);
+    callback dismiss-floating-menu();
 
     // Diálogo de confirmação ao encerrar o Minecraft
     in-out property <bool> show-stop-confirm-dialog: false;
@@ -258,14 +284,10 @@ export component MainWindow inherits Window {
     in property <string> install-transfer-text: "";
 
     in property <string> status-text: "Ready";
+    in property <string> status-kind: "success";
     in property <string> app-version: "v0.1.0";
 
     // Diálogos modais
-    in-out property <bool> show-group-dialog: false;
-    in-out property <string> group-dialog-title: "Create Group";
-    in-out property <string> group-dialog-target-id: "";
-    in-out property <string> group-dialog-input: "";
-    in property <string> group-dialog-error: "";
     in-out property <bool> show-delete-dialog: false;
     in-out property <bool> show-offline-account-dialog: false;
     in-out property <string> offline-username-input: "";
@@ -283,6 +305,8 @@ export component MainWindow inherits Window {
     callback create-offline-account(string);
     callback select-instance(string);
     callback launch-instance-clicked(string);
+    callback launch-offline-requested(string);
+    callback launch-demo-clicked(string);
     callback stop-instance-clicked(string);
     callback confirm-stop-instance(string);
     callback open-console-clicked(string);
@@ -304,9 +328,11 @@ export component MainWindow inherits Window {
     callback move-group-down(string);
     callback delete-group-clicked(string);
 
-    // Atalhos globais da janela principal (desativados quando diálogos com campos de texto estão abertos)
+    // Atalhos globais da janela principal (ancestral de todo o conteúdo para nunca perder atalhos ao clicar em botões)
     key-scope := FocusScope {
-        enabled: !root.show-group-dialog && !root.show-delete-dialog && !root.show-offline-account-dialog && !root.show-copy-dialog && !root.show-stop-confirm-dialog;
+        width: parent.width;
+        height: parent.height;
+        enabled: !root.show-delete-dialog && !root.show-offline-account-dialog && !root.show-copy-dialog && !root.show-stop-confirm-dialog;
         key-pressed(ev) => {
             if (ev.text == Key.Escape) {
                 if (root.dragging-component != "") {
@@ -322,11 +348,14 @@ export component MainWindow inherits Window {
                     return accept;
                 }
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
+                root.show-launch-menu = false;
                 root.show-group-context-menu = false;
                 root.show-instance-context-menu = false;
                 root.show-empty-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 if (root.instance-search-query != "") {
                     root.instance-search-query = "";
                     root.instance-search-changed("");
@@ -336,7 +365,7 @@ export component MainWindow inherits Window {
                 }
                 return accept;
             }
-            if (ev.modifiers.control && (ev.text == "f" || ev.text == "F")) {
+            if (ev.modifiers.control && (ev.text == "f" || ev.text == "F" || ev.text == "\u{0006}")) {
                 if (root.hide-instance-search) {
                     root.temp-reveal-search = true;
                 }
@@ -368,21 +397,35 @@ export component MainWindow inherits Window {
                     return accept;
                 }
                 if (ev.modifiers.control) {
-                    if (ev.text == "k" || ev.text == "K") {
+                    if ((ev.text == "o" || ev.text == "O" || ev.text == "\u{000f}" || ev.text == "ø" || ev.text == "Ø" || ev.text == "ó" || ev.text == "Ó")
+                        && !root.selected-instance-running
+                        && root.selected-instance-status-code != "installing")
+                    {
+                        root.show-launch-menu = false;
+                        if (ev.modifiers.shift) {
+                            root.launch-offline-requested(root.selected-instance-id);
+                        } else if (ev.modifiers.alt) {
+                            root.launch-demo-clicked(root.selected-instance-id);
+                        } else {
+                            root.launch-instance-clicked(root.selected-instance-id);
+                        }
+                        return accept;
+                    }
+                    if (ev.text == "k" || ev.text == "K" || ev.text == "\u{000b}") {
                         if (root.selected-instance-running) {
                             root.stop-instance-clicked(root.selected-instance-id);
                         }
                         return accept;
                     }
-                    if (ev.text == "i" || ev.text == "I") {
+                    if (ev.text == "i" || ev.text == "I" || ev.text == "\u{0009}") {
                         root.edit-instance-clicked(root.selected-instance-id);
                         return accept;
                     }
-                    if (ev.text == "g" || ev.text == "G") {
+                    if (ev.text == "g" || ev.text == "G" || ev.text == "\u{0007}") {
                         root.change-group-clicked(root.selected-instance-id);
                         return accept;
                     }
-                    if (ev.text == "d" || ev.text == "D") {
+                    if (ev.text == "d" || ev.text == "D" || ev.text == "\u{0004}") {
                         root.request-copy-instance-dialog(root.selected-instance-id, root.selected-instance-name);
                         return accept;
                     }
@@ -390,10 +433,9 @@ export component MainWindow inherits Window {
             }
             reject
         }
-    }
 
-    // Wallpaper do tema especial Vice (preserva proporção com cover + scrim sutil para legibilidade)
-    if Theme.is-vice-theme: Rectangle {
+    // Wallpaper do tema especial Vice (respeita Wallpaper Opacity e Disable Special Effects)
+    if Theme.is-vice-theme && Theme.wallpaper-opacity > 0.0: Rectangle {
         width: parent.width;
         height: parent.height;
         clip: true;
@@ -403,12 +445,14 @@ export component MainWindow inherits Window {
             height: parent.height;
             source: @image-url("../assets/themes/vice/wallpaper.png");
             image-fit: cover;
+            opacity: Theme.wallpaper-opacity;
         }
 
-        Rectangle {
+        if !Theme.disable-special-effects: Rectangle {
             width: parent.width;
             height: parent.height;
             background: #19152266;
+            opacity: Theme.wallpaper-opacity;
         }
     }
 
@@ -442,7 +486,7 @@ export component MainWindow inherits Window {
 
                 CrabButton {
                     text: "Reset Layout";
-                    icon: @image-url("../assets/icons/refresh.svg");
+                    icon: Theme.icon-refresh;
                     has-icon: true;
                     variant: "secondary";
                     height: 26px;
@@ -471,7 +515,7 @@ export component MainWindow inherits Window {
 
                 CrabButton {
                     text: "Done";
-                    icon: @image-url("../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "primary";
                     height: 26px;
@@ -491,106 +535,38 @@ export component MainWindow inherits Window {
         }
 
         // Barra de status encaixada no topo (quando status-bar-position == "top")
-        if root.show-status-bar && root.status-bar-position == "top": Rectangle {
-            height: Theme.statusbar-height;
-            background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
-            clip: true;
-
-            if Theme.is-vice-theme: Image {
-                x: 0px;
-                y: 0px;
-                width: root.width;
-                height: root.height;
-                source: @image-url("../assets/themes/vice/wallpaper-blurred.png");
-                image-fit: cover;
-            }
-            if Theme.is-vice-theme: Rectangle {
-                width: parent.width;
-                height: parent.height;
-                background: #30253894;
-            }
+        if root.show-status-bar && root.status-bar-position == "top": CrabStatusBar {
+            position: "top";
+            instance-count: root.instances.length;
+            status-text: root.status-text;
+            status-kind: root.status-kind;
+            is-busy: root.install-active;
+            is-running: root.selected-instance-running;
+            selected-instance-id: root.selected-instance-id;
+            selected-instance-playtime: root.selected-instance-playtime;
+            selected-instance-last-played: root.selected-instance-last-played;
+            app-version: root.app-version;
+            customize-layout-mode: root.customize-layout-mode;
             border-width: root.customize-layout-mode ? 1px : 0px;
             border-color: Theme.accent;
-
-            HorizontalLayout {
-                padding-left: Theme.space-md;
-                padding-right: Theme.space-md;
-                spacing: Theme.space-md;
-
-                if root.customize-layout-mode: Rectangle {
-                    width: 68px;
-                    height: 18px;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: 3px;
-                    background: Theme.accent;
-
-                    TouchArea {
-                        mouse-cursor: grab;
-                        pointer-event(ev) => {
-                            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
-                                root.dragging-component = "statusbar";
-                                root.drop-preview-zone = "top";
-                            } else if (ev.kind == PointerEventKind.up && root.dragging-component == "statusbar") {
-                                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
-                                    root.status-bar-position = root.drop-preview-zone;
-                                }
-                                root.dragging-component = "";
-                                root.drop-preview-zone = "";
-                            }
-                        }
-                        moved => {
-                            if (root.dragging-component == "statusbar") {
-                                root.drop-preview-zone = (self.absolute-position.y + self.mouse-y) < (root.height / 2) ? "top" : "bottom";
-                            }
-                        }
-                    }
-
-                    Text {
-                        text: "Drag Bar";
-                        font-size: 10px;
-                        font-weight: 600;
-                        color: Theme.text-on-accent;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-
-                Text {
-                    text: root.instances.length == 1 ? "1 instance" : root.instances.length + " instances";
-                    font-size: Theme.font-xs;
-                    color: Theme.text-secondary;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: root.status-text;
-                    font-size: Theme.font-xs;
-                    color: Theme.text-secondary;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-                if root.selected-instance-id != "" && root.selected-instance-playtime != "": Text {
-                    text: "Played: " + root.selected-instance-playtime
-                        + (root.selected-instance-last-played != "" ? "  |  Last played: " + root.selected-instance-last-played : "")
-                        + "  |";
-                    font-size: Theme.font-xs;
-                    color: Theme.text-secondary;
-                    vertical-alignment: center;
-                }
-
-                Text {
-                    text: root.app-version;
-                    font-size: Theme.font-xs;
-                    color: Theme.text-disabled;
-                    vertical-alignment: center;
+            blur-offset-y: 0px;
+            window-width: root.width;
+            window-height: root.height;
+            drag-started => {
+                root.dragging-component = "statusbar";
+                root.drop-preview-zone = "top";
+            }
+            drag-moved(gy) => {
+                if (root.dragging-component == "statusbar") {
+                    root.drop-preview-zone = gy < (root.height / 2) ? "top" : "bottom";
                 }
             }
-
-            Rectangle {
-                y: parent.height - 1px;
-                height: 1px;
-                width: parent.width;
-                background: Theme.border;
+            drag-ended => {
+                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
+                    root.status-bar-position = root.drop-preview-zone;
+                }
+                root.dragging-component = "";
+                root.drop-preview-zone = "";
             }
         }
 
@@ -611,38 +587,52 @@ export component MainWindow inherits Window {
 
             add-instance-clicked => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
+                root.show-launch-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.add-instance-clicked();
             }
             folders-toggled(bx, by, bw, bh) => {
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.folders-btn-x = bx;
                 root.folders-btn-y = by;
                 root.folders-btn-h = bh;
                 root.show-folders-menu = !root.show-folders-menu;
             }
-            create-group-clicked => {
+            groups-toggled(bx, by, bw, bh) => {
                 root.show-folders-menu = false;
                 root.show-accounts-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
-                root.request-group-dialog("Create Group", "", "");
+                root.dismiss-floating-menu();
+                root.groups-btn-x = bx;
+                root.groups-btn-y = by;
+                root.groups-btn-h = bh;
+                root.show-groups-menu = !root.show-groups-menu;
             }
             settings-clicked => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
+                root.show-launch-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.settings-clicked();
             }
             accounts-toggled(bx, by, bw, bh) => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.accounts-btn-x = bx;
                 root.accounts-btn-y = by;
                 root.accounts-btn-w = bw;
@@ -657,6 +647,7 @@ export component MainWindow inherits Window {
             }
             toolbar-right-clicked(mx, my) => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
                 root.toolbar-context-x = max(8px, min(root.width - 216px, mx));
                 root.toolbar-context-y = max(4px, min(root.height - 190px, my));
@@ -742,7 +733,22 @@ export component MainWindow inherits Window {
                     blur-offset-y: (root.toolbar-position == "top" ? root.active-toolbar-height : 0px)
                         + (root.show-status-bar && root.status-bar-position == "top" ? Theme.statusbar-height : 0px);
 
-                    launch-clicked => { if (!root.customize-layout-mode) { root.launch-instance-clicked(root.selected-instance-id); } }
+                    launch-clicked => { if (!root.customize-layout-mode) { root.show-launch-menu = false; root.launch-instance-clicked(root.selected-instance-id); } }
+                    launch-menu-toggled(bx, by, bw, bh) => {
+                        if (!root.customize-layout-mode) {
+                            root.show-folders-menu = false;
+                            root.show-groups-menu = false;
+                            root.show-accounts-menu = false;
+                            root.show-group-context-menu = false;
+                            root.show-toolbar-context-menu = false;
+                            root.dismiss-floating-menu();
+                            root.launch-menu-x = bx;
+                            root.launch-menu-y = by;
+                            root.launch-menu-w = bw;
+                            root.launch-menu-h = bh;
+                            root.show-launch-menu = !root.show-launch-menu;
+                        }
+                    }
                     stop-clicked => { if (!root.customize-layout-mode) { root.stop-instance-clicked(root.selected-instance-id); } }
                     console-clicked => { if (!root.customize-layout-mode) { root.open-console-clicked(root.selected-instance-id); } }
                     install-clicked => { if (!root.customize-layout-mode) { root.install-instance-clicked(root.selected-instance-id); } }
@@ -762,15 +768,23 @@ export component MainWindow inherits Window {
 
                 // Clique direito em área vazia da grade abre exclusivamente "Create Instance"
                 empty-area-touch := TouchArea {
+                    clicked => {
+                        root.dismiss-floating-menu();
+                    }
                     pointer-event(ev) => {
                         if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
                             root.show-folders-menu = false;
+                            root.show-groups-menu = false;
                             root.show-accounts-menu = false;
                             root.show-group-context-menu = false;
                             root.show-instance-context-menu = false;
-                            root.empty-context-x = max(8px, min(root.width - 180px, self.absolute-position.x + self.mouse-x));
-                            root.empty-context-y = max(Theme.toolbar-height + 4px, min(root.height - 50px, self.absolute-position.y + self.mouse-y));
-                            root.show-empty-context-menu = true;
+                            if (root.use-floating-context-menus) {
+                                root.open-floating-empty-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                            } else {
+                                root.empty-context-x = self.absolute-position.x + self.mouse-x;
+                                root.empty-context-y = self.absolute-position.y + self.mouse-y;
+                                root.show-empty-context-menu = true;
+                            }
                         }
                     }
                 }
@@ -783,7 +797,7 @@ export component MainWindow inherits Window {
                     HorizontalLayout {
                         alignment: center;
                         Image {
-                            source: @image-url("../assets/icons/cube.svg");
+                            source: Theme.icon-cube;
                             width: 44px;
                             height: 44px;
                         }
@@ -812,7 +826,7 @@ export component MainWindow inherits Window {
                         alignment: center;
                         CrabButton {
                             text: Strings.add-instance;
-                            icon: @image-url("../assets/icons/plus.svg");
+                            icon: Theme.icon-plus;
                             has-icon: true;
                             variant: "primary";
                             clicked => {
@@ -827,8 +841,8 @@ export component MainWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
 
-                    property <length> card-w: 104px;
-                    property <length> card-h: root.grid-icon-px + 54px;
+                    property <length> card-w: 112px;
+                    property <length> card-h: root.grid-icon-px + 58px;
                     property <length> gap: root.grid-gap;
                     property <length> pad: 10px;
                     property <int> columns: max(1, floor((self.width - 2 * self.pad + self.gap) / (self.card-w + self.gap)));
@@ -855,6 +869,7 @@ export component MainWindow inherits Window {
                         show-modloader: root.grid-show-modloader;
                         clicked => {
                             key-scope.focus();
+                            root.dismiss-floating-menu();
                             root.select-instance(inst.id);
                         }
                         double-clicked => {
@@ -862,16 +877,26 @@ export component MainWindow inherits Window {
                                 root.launch-instance-clicked(inst.id);
                             }
                         }
+                        middle-clicked => {
+                            key-scope.focus();
+                            root.select-instance(inst.id);
+                            root.edit-instance-clicked(inst.id);
+                        }
                         right-clicked(mx, my) => {
                             key-scope.focus();
                             root.select-instance(inst.id);
                             root.show-folders-menu = false;
+                            root.show-groups-menu = false;
                             root.show-accounts-menu = false;
                             root.show-group-context-menu = false;
                             root.show-empty-context-menu = false;
-                            root.instance-context-x = max(8px, min(root.width - 236px, mx));
-                            root.instance-context-y = max(root.active-toolbar-height + 4px, min(root.height - 380px, my));
-                            root.show-instance-context-menu = true;
+                            if (root.use-floating-context-menus) {
+                                root.open-floating-instance-menu(mx, my);
+                            } else {
+                                root.instance-context-x = mx;
+                                root.instance-context-y = my;
+                                root.show-instance-context-menu = true;
+                            }
                         }
                     }
                 }
@@ -881,8 +906,8 @@ export component MainWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
 
-                    property <length> card-w: 104px;
-                    property <length> card-h: root.grid-icon-px + 54px;
+                    property <length> card-w: 112px;
+                    property <length> card-h: root.grid-icon-px + 58px;
                     property <length> gap: root.grid-gap;
                     property <int> columns: max(1, floor((self.width - 20px + self.gap) / (self.card-w + self.gap)));
 
@@ -933,13 +958,24 @@ export component MainWindow inherits Window {
                                             && ev.kind == PointerEventKind.down
                                             && ev.button == PointerEventButton.right) {
                                             root.show-folders-menu = false;
+                                            root.show-groups-menu = false;
                                             root.show-accounts-menu = false;
                                             root.group-context-id = section.id;
                                             root.group-context-name = section.name;
                                             root.group-context-collapsed = section.collapsed;
-                                            root.group-context-x = max(8px, min(root.width - 196px, self.absolute-position.x + self.mouse-x));
-                                            root.group-context-y = max(root.active-toolbar-height + 4px, min(root.height - 170px, self.absolute-position.y + self.mouse-y));
-                                            root.show-group-context-menu = true;
+                                            if (root.use-floating-context-menus) {
+                                                root.open-floating-group-menu(
+                                                    section.id,
+                                                    section.name,
+                                                    section.collapsed,
+                                                    self.absolute-position.x + self.mouse-x,
+                                                    self.absolute-position.y + self.mouse-y
+                                                );
+                                            } else {
+                                                root.group-context-x = self.absolute-position.x + self.mouse-x;
+                                                root.group-context-y = self.absolute-position.y + self.mouse-y;
+                                                root.show-group-context-menu = true;
+                                            }
                                         }
                                     }
                                 }
@@ -973,12 +1009,6 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            if !section.collapsed && section.instances.length == 0: Text {
-                                text: "Empty group";
-                                font-size: Theme.font-xs;
-                                color: Theme.text-disabled;
-                            }
-
                             if !section.collapsed && section.instances.length > 0: Rectangle {
                                 height: ceil(section.instances.length / groups-flick.columns) * (groups-flick.card-h + groups-flick.gap);
 
@@ -1000,6 +1030,7 @@ export component MainWindow inherits Window {
                                     show-modloader: root.grid-show-modloader;
                                     clicked => {
                                         key-scope.focus();
+                                        root.dismiss-floating-menu();
                                         root.select-instance(inst.id);
                                     }
                                     double-clicked => {
@@ -1007,16 +1038,26 @@ export component MainWindow inherits Window {
                                             root.launch-instance-clicked(inst.id);
                                         }
                                     }
+                                    middle-clicked => {
+                                        key-scope.focus();
+                                        root.select-instance(inst.id);
+                                        root.edit-instance-clicked(inst.id);
+                                    }
                                     right-clicked(mx, my) => {
                                         key-scope.focus();
                                         root.select-instance(inst.id);
                                         root.show-folders-menu = false;
+                                        root.show-groups-menu = false;
                                         root.show-accounts-menu = false;
                                         root.show-group-context-menu = false;
                                         root.show-empty-context-menu = false;
-                                        root.instance-context-x = max(8px, min(root.width - 236px, mx));
-                                        root.instance-context-y = max(root.active-toolbar-height + 4px, min(root.height - 380px, my));
-                                        root.show-instance-context-menu = true;
+                                        if (root.use-floating-context-menus) {
+                                            root.open-floating-instance-menu(mx, my);
+                                        } else {
+                                            root.instance-context-x = mx;
+                                            root.instance-context-y = my;
+                                            root.show-instance-context-menu = true;
+                                        }
                                     }
                                     drag-started(dname, ax, ay) => {
                                         root.instance-dragging = true;
@@ -1107,7 +1148,22 @@ export component MainWindow inherits Window {
                     blur-offset-y: (root.toolbar-position == "top" ? root.active-toolbar-height : 0px)
                         + (root.show-status-bar && root.status-bar-position == "top" ? Theme.statusbar-height : 0px);
 
-                    launch-clicked => { if (!root.customize-layout-mode) { root.launch-instance-clicked(root.selected-instance-id); } }
+                    launch-clicked => { if (!root.customize-layout-mode) { root.show-launch-menu = false; root.launch-instance-clicked(root.selected-instance-id); } }
+                    launch-menu-toggled(bx, by, bw, bh) => {
+                        if (!root.customize-layout-mode) {
+                            root.show-folders-menu = false;
+                            root.show-groups-menu = false;
+                            root.show-accounts-menu = false;
+                            root.show-group-context-menu = false;
+                            root.show-toolbar-context-menu = false;
+                            root.dismiss-floating-menu();
+                            root.launch-menu-x = bx;
+                            root.launch-menu-y = by;
+                            root.launch-menu-w = bw;
+                            root.launch-menu-h = bh;
+                            root.show-launch-menu = !root.show-launch-menu;
+                        }
+                    }
                     stop-clicked => { if (!root.customize-layout-mode) { root.stop-instance-clicked(root.selected-instance-id); } }
                     console-clicked => { if (!root.customize-layout-mode) { root.open-console-clicked(root.selected-instance-id); } }
                     install-clicked => { if (!root.customize-layout-mode) { root.install-instance-clicked(root.selected-instance-id); } }
@@ -1139,38 +1195,52 @@ export component MainWindow inherits Window {
 
             add-instance-clicked => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
+                root.show-launch-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.add-instance-clicked();
             }
             folders-toggled(bx, by, bw, bh) => {
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.folders-btn-x = bx;
                 root.folders-btn-y = by;
                 root.folders-btn-h = bh;
                 root.show-folders-menu = !root.show-folders-menu;
             }
-            create-group-clicked => {
+            groups-toggled(bx, by, bw, bh) => {
                 root.show-folders-menu = false;
                 root.show-accounts-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
-                root.request-group-dialog("Create Group", "", "");
+                root.dismiss-floating-menu();
+                root.groups-btn-x = bx;
+                root.groups-btn-y = by;
+                root.groups-btn-h = bh;
+                root.show-groups-menu = !root.show-groups-menu;
             }
             settings-clicked => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
+                root.show-launch-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.settings-clicked();
             }
             accounts-toggled(bx, by, bw, bh) => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-group-context-menu = false;
                 root.show-toolbar-context-menu = false;
+                root.dismiss-floating-menu();
                 root.accounts-btn-x = bx;
                 root.accounts-btn-y = by;
                 root.accounts-btn-w = bw;
@@ -1185,6 +1255,7 @@ export component MainWindow inherits Window {
             }
             toolbar-right-clicked(mx, my) => {
                 root.show-folders-menu = false;
+                root.show-groups-menu = false;
                 root.show-accounts-menu = false;
                 root.toolbar-context-x = max(8px, min(root.width - 216px, mx));
                 root.toolbar-context-y = max(4px, min(root.height - 190px, my));
@@ -1207,122 +1278,91 @@ export component MainWindow inherits Window {
         }
 
         // Barra de status encaixada na parte inferior (padrão)
-        if root.show-status-bar && root.status-bar-position == "bottom": Rectangle {
-            height: Theme.statusbar-height;
-            background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
-            clip: true;
-
-            if Theme.is-vice-theme: Image {
-                x: 0px;
-                y: -(root.height - Theme.statusbar-height);
-                width: root.width;
-                height: root.height;
-                source: @image-url("../assets/themes/vice/wallpaper-blurred.png");
-                image-fit: cover;
-            }
-            if Theme.is-vice-theme: Rectangle {
-                width: parent.width;
-                height: parent.height;
-                background: #30253894;
-            }
+        if root.show-status-bar && root.status-bar-position == "bottom": CrabStatusBar {
+            position: "bottom";
+            instance-count: root.instances.length;
+            status-text: root.status-text;
+            status-kind: root.status-kind;
+            is-busy: root.install-active;
+            is-running: root.selected-instance-running;
+            selected-instance-id: root.selected-instance-id;
+            selected-instance-playtime: root.selected-instance-playtime;
+            selected-instance-last-played: root.selected-instance-last-played;
+            app-version: root.app-version;
+            customize-layout-mode: root.customize-layout-mode;
             border-width: root.customize-layout-mode ? 1px : 0px;
             border-color: Theme.accent;
-
-            Rectangle {
-                y: 0px;
-                height: 1px;
-                width: parent.width;
-                background: Theme.border;
+            blur-offset-y: root.height - Theme.statusbar-height;
+            window-width: root.width;
+            window-height: root.height;
+            drag-started => {
+                root.dragging-component = "statusbar";
+                root.drop-preview-zone = "bottom";
             }
-
-            HorizontalLayout {
-                padding-left: Theme.space-md;
-                padding-right: Theme.space-md;
-                spacing: Theme.space-md;
-
-                if root.customize-layout-mode: Rectangle {
-                    width: 68px;
-                    height: 18px;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: 3px;
-                    background: Theme.accent;
-
-                    TouchArea {
-                        mouse-cursor: grab;
-                        pointer-event(ev) => {
-                            if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
-                                root.dragging-component = "statusbar";
-                                root.drop-preview-zone = "bottom";
-                            } else if (ev.kind == PointerEventKind.up && root.dragging-component == "statusbar") {
-                                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
-                                    root.status-bar-position = root.drop-preview-zone;
-                                }
-                                root.dragging-component = "";
-                                root.drop-preview-zone = "";
-                            }
-                        }
-                        moved => {
-                            if (root.dragging-component == "statusbar") {
-                                root.drop-preview-zone = (self.absolute-position.y + self.mouse-y) < (root.height / 2) ? "top" : "bottom";
-                            }
-                        }
-                    }
-
-                    Text {
-                        text: "Drag Bar";
-                        font-size: 10px;
-                        font-weight: 600;
-                        color: Theme.text-on-accent;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+            drag-moved(gy) => {
+                if (root.dragging-component == "statusbar") {
+                    root.drop-preview-zone = gy < (root.height / 2) ? "top" : "bottom";
                 }
-
-                Text {
-                    text: root.instances.length == 1
-                        ? "1 instance"
-                        : root.instances.length + " instances";
-                    font-size: Theme.font-xs;
-                    color: Theme.text-secondary;
-                    vertical-alignment: center;
+            }
+            drag-ended => {
+                if (root.drop-preview-zone == "top" || root.drop-preview-zone == "bottom") {
+                    root.status-bar-position = root.drop-preview-zone;
                 }
+                root.dragging-component = "";
+                root.drop-preview-zone = "";
+            }
+        }
+    }
 
-                Rectangle {
-                    width: 1px;
-                    height: 11px;
-                    y: (parent.height - self.height) / 2;
-                    background: Theme.border;
+    // Menu suspenso de opções de Launch (Launch / Launch Offline / Launch Demo)
+    if root.show-launch-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-launch-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: max(8px, min(parent.width - self.width - 8px, root.launch-menu-x + root.launch-menu-w - self.width));
+            y: min(parent.height - self.height - 8px, root.launch-menu-y + root.launch-menu-h + 6px);
+            menu-width: 244px;
+
+            ContextMenuItem {
+                text: "Launch";
+                shortcut: "Ctrl+O";
+                icon: Theme.icon-play;
+                enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
+                clicked => {
+                    root.show-launch-menu = false;
+                    root.launch-instance-clicked(root.selected-instance-id);
                 }
-
-                Text {
-                    text: root.status-text;
-                    font-size: Theme.font-xs;
-                    color: Theme.text-secondary;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
-                    overflow: elide;
+            }
+            ContextMenuItem {
+                text: "Launch Offline";
+                shortcut: "Ctrl+Shift+O";
+                icon: Theme.icon-user;
+                enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
+                clicked => {
+                    root.show-launch-menu = false;
+                    root.launch-offline-requested(root.selected-instance-id);
                 }
-
-                if root.selected-instance-id != "" && root.selected-instance-playtime != "": Text {
-                    text: "Played: " + root.selected-instance-playtime
-                        + (root.selected-instance-last-played != "" ? "  |  Last played: " + root.selected-instance-last-played : "")
-                        + "  |";
-                    font-size: Theme.font-xs;
-                    color: Theme.text-secondary;
-                    vertical-alignment: center;
-                }
-
-                Text {
-                    text: root.app-version;
-                    font-size: Theme.font-xs;
-                    color: Theme.text-disabled;
-                    vertical-alignment: center;
+            }
+            ContextMenuItem {
+                text: "Launch Demo";
+                shortcut: "Ctrl+Alt+O";
+                icon: Theme.icon-flask-conical;
+                enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
+                clicked => {
+                    root.show-launch-menu = false;
+                    root.launch-demo-clicked(root.selected-instance-id);
                 }
             }
         }
     }
 
-    // Menu suspenso Folders
+    // Menu suspenso Folders (ancorado com folga limpa de 6px fora da toolbar)
     if root.show-folders-menu: Rectangle {
         width: parent.width;
         height: parent.height;
@@ -1333,11 +1373,11 @@ export component MainWindow inherits Window {
         }
 
         CrabContextMenu {
-            x: max(4px, min(parent.width - self.width - 4px, root.folders-btn-x));
+            x: max(8px, min(parent.width - self.width - 8px, root.folders-btn-x));
             y: root.toolbar-position == "bottom"
-                ? max(4px, root.folders-btn-y - self.height - 4px)
-                : (root.folders-btn-y + root.folders-btn-h + 4px);
-            menu-width: 196px;
+                ? max(8px, root.folders-btn-y - self.height - 6px)
+                : min(parent.height - self.height - 8px, root.folders-btn-y + root.folders-btn-h + 6px);
+            menu-width: 220px;
 
             for item in [
                 { key: "launcher", label: "Launcher Folder" },
@@ -1350,7 +1390,7 @@ export component MainWindow inherits Window {
                 { key: "logs", label: "Logs Folder" },
             ]: ContextMenuItem {
                 text: item.label;
-                icon: @image-url("../assets/icons/folder.svg");
+                icon: Theme.icon-folder;
                 clicked => {
                     root.show-folders-menu = false;
                     root.open-system-folder(item.key);
@@ -1359,7 +1399,43 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Menu suspenso Account Selector
+    // Menu suspenso Groups (mesmo estilo e ancoragem limpa de 6px fora da toolbar)
+    if root.show-groups-menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.show-groups-menu = false; }
+        }
+
+        CrabContextMenu {
+            x: max(8px, min(parent.width - self.width - 8px, root.groups-btn-x));
+            y: root.toolbar-position == "bottom"
+                ? max(8px, root.groups-btn-y - self.height - 6px)
+                : min(parent.height - self.height - 8px, root.groups-btn-y + root.groups-btn-h + 6px);
+            menu-width: 204px;
+
+            ContextMenuItem {
+                text: "Create Group";
+                icon: Theme.icon-folder-plus;
+                clicked => {
+                    root.show-groups-menu = false;
+                    root.request-group-dialog("Create Group", "", "");
+                }
+            }
+            ContextMenuItem {
+                text: "Manage Groups";
+                icon: Theme.icon-folder;
+                clicked => {
+                    root.show-groups-menu = false;
+                    root.manage-groups-clicked();
+                }
+            }
+        }
+    }
+
+    // Menu suspenso Account Selector (alinhado à direita do botão, 6px fora da toolbar)
     if root.show-accounts-menu: Rectangle {
         width: parent.width;
         height: parent.height;
@@ -1370,18 +1446,18 @@ export component MainWindow inherits Window {
         }
 
         CrabContextMenu {
-            x: max(4px, min(parent.width - self.width - 4px, root.accounts-btn-x + root.accounts-btn-w - self.width));
+            x: max(8px, min(parent.width - self.width - 8px, root.accounts-btn-x + root.accounts-btn-w - self.width));
             y: root.toolbar-position == "bottom"
-                ? max(4px, root.accounts-btn-y - self.height - 4px)
-                : (root.accounts-btn-y + root.accounts-btn-h + 4px);
-            menu-width: 244px;
+                ? max(8px, root.accounts-btn-y - self.height - 6px)
+                : min(parent.height - self.height - 8px, root.accounts-btn-y + root.accounts-btn-h + 6px);
+            menu-width: 260px;
 
             for acc[idx] in root.accounts: Rectangle {
-                height: 28px;
+                height: 34px;
                 border-radius: Theme.radius-sm;
                 background: acc.is-default
                     ? Theme.accent-muted
-                    : am-touch.has-hover ? Theme.bg-interactive : transparent;
+                    : am-touch.has-hover ? Theme.bg-interactive-hover : transparent;
 
                 am-touch := TouchArea {
                     mouse-cursor: pointer;
@@ -1392,9 +1468,9 @@ export component MainWindow inherits Window {
                 }
 
                 HorizontalLayout {
-                    padding-left: Theme.space-sm;
-                    padding-right: Theme.space-sm;
-                    spacing: 6px;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 10px;
 
                     VerticalLayout {
                         alignment: center;
@@ -1426,7 +1502,7 @@ export component MainWindow inherits Window {
                     if acc.is-default: VerticalLayout {
                         alignment: center;
                         Image {
-                            source: @image-url("../assets/icons/check.svg");
+                            source: Theme.icon-check;
                             width: 14px;
                             height: 14px;
                             colorize: Theme.accent;
@@ -1439,7 +1515,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Manage Accounts";
-                icon: @image-url("../assets/icons/settings.svg");
+                icon: Theme.icon-settings;
                 clicked => {
                     root.show-accounts-menu = false;
                     root.accounts-clicked();
@@ -1459,27 +1535,24 @@ export component MainWindow inherits Window {
         }
 
         CrabContextMenu {
-            x: root.group-context-x;
-            y: root.group-context-y;
-            menu-width: 192px;
+            x: max(6px, min(parent.width - self.width - 6px, root.group-context-x));
+            y: max(6px, min(parent.height - self.height - 6px, root.group-context-y));
+            menu-width: 204px;
 
             ContextMenuItem {
                 text: "Rename Group";
-                icon: @image-url("../assets/icons/edit.svg");
+                icon: Theme.icon-edit;
                 clicked => {
                     root.show-group-context-menu = false;
-                    root.group-dialog-title = "Rename Group";
-                    root.group-dialog-target-id = root.group-context-id;
-                    root.group-dialog-input = root.group-context-name;
-                    root.show-group-dialog = true;
+                    root.request-group-dialog("Rename Group", root.group-context-id, root.group-context-name);
                 }
             }
 
             ContextMenuItem {
                 text: root.group-context-collapsed ? "Expand Group" : "Collapse Group";
                 icon: root.group-context-collapsed
-                    ? @image-url("../assets/icons/chevron-down.svg")
-                    : @image-url("../assets/icons/chevron-up.svg");
+                    ? Theme.icon-chevron-down
+                    : Theme.icon-chevron-up;
                 clicked => {
                     root.show-group-context-menu = false;
                     root.toggle-group-collapsed(root.group-context-id);
@@ -1490,7 +1563,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Move Group Up";
-                icon: @image-url("../assets/icons/arrow-up.svg");
+                icon: Theme.icon-arrow-up;
                 clicked => {
                     root.show-group-context-menu = false;
                     root.move-group-up(root.group-context-id);
@@ -1499,7 +1572,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Move Group Down";
-                icon: @image-url("../assets/icons/arrow-down.svg");
+                icon: Theme.icon-arrow-down;
                 clicked => {
                     root.show-group-context-menu = false;
                     root.move-group-down(root.group-context-id);
@@ -1510,7 +1583,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Delete Group";
-                icon: @image-url("../assets/icons/trash.svg");
+                icon: Theme.icon-trash;
                 danger: true;
                 clicked => {
                     root.show-group-context-menu = false;
@@ -1531,9 +1604,9 @@ export component MainWindow inherits Window {
         }
 
         CrabContextMenu {
-            x: root.instance-context-x;
-            y: root.instance-context-y;
-            menu-width: 236px;
+            x: max(6px, min(parent.width - self.width - 6px, root.instance-context-x));
+            y: max(6px, min(parent.height - self.height - 6px, root.instance-context-y));
+            menu-width: 244px;
 
             ContextMenuHeader { text: root.selected-instance-name; }
                 ContextMenuDivider { }
@@ -1541,7 +1614,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Rename";
                     shortcut: "F2";
-                    icon: @image-url("../assets/icons/edit.svg");
+                    icon: Theme.icon-edit;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.open-rename-instance-clicked(root.selected-instance-id);
@@ -1549,7 +1622,7 @@ export component MainWindow inherits Window {
                 }
                 ContextMenuItem {
                     text: "Change Icon";
-                    icon: @image-url("../assets/icons/cube.svg");
+                    icon: Theme.icon-cube;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.change-icon-clicked(root.selected-instance-id);
@@ -1560,7 +1633,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Launch";
                     shortcut: "Enter";
-                    icon: @image-url("../assets/icons/play.svg");
+                    icon: Theme.icon-play;
                     enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
                     clicked => {
                         root.show-instance-context-menu = false;
@@ -1570,7 +1643,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Stop Game";
                     shortcut: "Ctrl+K";
-                    icon: @image-url("../assets/icons/square.svg");
+                    icon: Theme.icon-square;
                     enabled: root.selected-instance-running;
                     clicked => {
                         root.show-instance-context-menu = false;
@@ -1582,7 +1655,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Edit Instance";
                     shortcut: "Ctrl+I";
-                    icon: @image-url("../assets/icons/settings.svg");
+                    icon: Theme.icon-settings;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.edit-instance-clicked(root.selected-instance-id);
@@ -1590,7 +1663,7 @@ export component MainWindow inherits Window {
                 }
                 ContextMenuItem {
                     text: "View Launch Configuration";
-                    icon: @image-url("../assets/icons/info.svg");
+                    icon: Theme.icon-info;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.view-launch-config-clicked(root.selected-instance-id);
@@ -1599,7 +1672,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Change Group";
                     shortcut: "Ctrl+G";
-                    icon: @image-url("../assets/icons/folder-plus.svg");
+                    icon: Theme.icon-folder-plus;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.change-group-clicked(root.selected-instance-id);
@@ -1607,7 +1680,7 @@ export component MainWindow inherits Window {
                 }
                 ContextMenuItem {
                     text: "Open Folder";
-                    icon: @image-url("../assets/icons/folder.svg");
+                    icon: Theme.icon-folder;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.open-folder-clicked(root.selected-instance-id);
@@ -1618,7 +1691,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Copy Instance";
                     shortcut: "Ctrl+D";
-                    icon: @image-url("../assets/icons/copy.svg");
+                    icon: Theme.icon-copy;
                     clicked => {
                         root.show-instance-context-menu = false;
                         root.copy-new-name = root.selected-instance-name + " Copy";
@@ -1627,7 +1700,7 @@ export component MainWindow inherits Window {
                 }
                 ContextMenuItem {
                     text: "Repair Instance";
-                    icon: @image-url("../assets/icons/wrench.svg");
+                    icon: Theme.icon-wrench;
                     enabled: !root.selected-instance-running && root.selected-instance-status-code != "installing";
                     clicked => {
                         root.show-instance-context-menu = false;
@@ -1637,7 +1710,7 @@ export component MainWindow inherits Window {
                 ContextMenuItem {
                     text: "Delete Instance";
                     shortcut: "Del";
-                    icon: @image-url("../assets/icons/trash.svg");
+                    icon: Theme.icon-trash;
                     danger: true;
                     enabled: !root.selected-instance-running;
                     clicked => {
@@ -1659,9 +1732,9 @@ export component MainWindow inherits Window {
         }
 
         CrabContextMenu {
-            x: root.empty-context-x;
-            y: root.empty-context-y;
-            menu-width: 184px;
+            x: max(6px, min(parent.width - self.width - 6px, root.empty-context-x));
+            y: max(6px, min(parent.height - self.height - 6px, root.empty-context-y));
+            menu-width: 196px;
 
             Rectangle {
                 height: 22px;
@@ -1669,7 +1742,7 @@ export component MainWindow inherits Window {
                     padding-left: Theme.space-sm;
                     padding-right: Theme.space-sm;
                     Text {
-                        text: "Crab";
+                        text: "Crab Launcher";
                         font-size: Theme.font-xs;
                         font-weight: 600;
                         color: Theme.text-secondary;
@@ -1682,7 +1755,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Create Instance";
-                icon: @image-url("../assets/icons/plus.svg");
+                icon: Theme.icon-plus;
                 clicked => {
                     root.show-empty-context-menu = false;
                     root.add-instance-clicked();
@@ -1691,7 +1764,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Create Group";
-                icon: @image-url("../assets/icons/folder-plus.svg");
+                icon: Theme.icon-folder-plus;
                 clicked => {
                     root.show-empty-context-menu = false;
                     root.request-group-dialog("Create Group", "", "");
@@ -1717,7 +1790,7 @@ export component MainWindow inherits Window {
 
             ContextMenuItem {
                 text: "Customize Layout";
-                    icon: @image-url("../assets/icons/layout-grid.svg");
+                    icon: Theme.icon-layout-grid;
                     clicked => {
                         root.show-toolbar-context-menu = false;
                         root.prev-toolbar-position = root.toolbar-position;
@@ -1786,7 +1859,7 @@ export component MainWindow inherits Window {
 
                 ContextMenuItem {
                     text: "Reset Layout";
-                    icon: @image-url("../assets/icons/refresh.svg");
+                    icon: Theme.icon-refresh;
                     clicked => {
                         root.hide-instance-search = false;
                         root.temp-reveal-search = false;
@@ -1827,6 +1900,7 @@ export component MainWindow inherits Window {
             horizontal-alignment: center;
             vertical-alignment: center;
         }
+    }
     }
 
 }

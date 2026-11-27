@@ -1,0 +1,205 @@
+import { Theme } from "../theme.slint";
+
+/// Campo numérico temático do Crab com setas de incremento/decremento e suporte a scroll do mouse.
+export component CrabNumberInput inherits Rectangle {
+    in-out property <string> text: "0";
+    in property <string> placeholder: "";
+    in property <int> min-value: 0;
+    in property <int> max-value: 9999999;
+    in property <int> step: 1;
+    in property <bool> enabled: true;
+
+    callback edited(string);
+    callback accepted(string);
+
+    function step-by(delta: int) {
+        if (!root.enabled) {
+            return;
+        }
+        let current = root.text.is-float() ? Math.round(root.text.to-float()) : root.min-value;
+        let next = max(root.min-value, min(root.max-value, current + delta));
+        root.text = next;
+        input.focus();
+        input.select-all();
+        root.edited(root.text);
+    }
+
+    height: 32px;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    background: root.enabled ? Theme.bg-primary : Theme.bg-secondary;
+    border-color: !root.enabled
+        ? Theme.border-subtle
+        : input.has-focus
+            ? Theme.accent
+            : (wheel-area.has-hover || up-touch.has-hover || down-touch.has-hover)
+                ? Theme.border
+                : Theme.border;
+    clip: true;
+
+    wheel-area := TouchArea {
+        enabled: root.enabled;
+        scroll-event(ev) => {
+            if (!root.enabled) {
+                return reject;
+            }
+            if (ev.delta-y > 0px) {
+                root.step-by(root.step);
+                return accept;
+            } else if (ev.delta-y < 0px) {
+                root.step-by(-root.step);
+                return accept;
+            }
+            reject
+        }
+        clicked => {
+            input.focus();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-sm;
+        padding-right: 0px;
+        spacing: 4px;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            clip: true;
+
+            if root.text == "" && root.placeholder != "": Text {
+                text: root.placeholder;
+                color: Theme.text-secondary;
+                font-size: Theme.font-md;
+                vertical-alignment: center;
+                x: 0px;
+                height: parent.height;
+            }
+
+            input := TextInput {
+                width: parent.width;
+                height: parent.height;
+                text <=> root.text;
+                enabled: root.enabled;
+                input-type: number;
+                color: root.enabled ? Theme.text-primary : Theme.text-disabled;
+                font-size: Theme.font-md;
+                vertical-alignment: center;
+                selection-background-color: Theme.accent;
+                selection-foreground-color: Theme.text-on-accent;
+                single-line: true;
+
+                edited => {
+                    root.edited(self.text);
+                }
+
+                accepted => {
+                    root.accepted(self.text);
+                }
+            }
+        }
+
+        // Coluna de setas (para cima / para baixo) indicando ajuste por clique ou scroll
+        Rectangle {
+            width: 22px;
+            background: Theme.bg-secondary;
+
+            Rectangle {
+                x: 0px;
+                width: 1px;
+                height: parent.height;
+                background: Theme.border-subtle;
+            }
+
+            VerticalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 0px;
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: !root.enabled
+                        ? transparent
+                        : up-touch.pressed
+                            ? Theme.bg-interactive-pressed
+                            : up-touch.has-hover
+                                ? Theme.bg-interactive-hover
+                                : transparent;
+
+                    up-touch := TouchArea {
+                        enabled: root.enabled;
+                        mouse-cursor: root.enabled ? pointer : default;
+                        clicked => { root.step-by(root.step); }
+                        scroll-event(ev) => {
+                            if (ev.delta-y > 0px) {
+                                root.step-by(root.step);
+                                return accept;
+                            } else if (ev.delta-y < 0px) {
+                                root.step-by(-root.step);
+                                return accept;
+                            }
+                            reject
+                        }
+                    }
+
+                    Image {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 10px;
+                        height: 10px;
+                        source: Theme.icon-chevron-up;
+                        colorize: !root.enabled
+                            ? Theme.text-disabled
+                            : up-touch.has-hover
+                                ? Theme.accent
+                                : Theme.text-secondary;
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border-subtle;
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: !root.enabled
+                        ? transparent
+                        : down-touch.pressed
+                            ? Theme.bg-interactive-pressed
+                            : down-touch.has-hover
+                                ? Theme.bg-interactive-hover
+                                : transparent;
+
+                    down-touch := TouchArea {
+                        enabled: root.enabled;
+                        mouse-cursor: root.enabled ? pointer : default;
+                        clicked => { root.step-by(-root.step); }
+                        scroll-event(ev) => {
+                            if (ev.delta-y > 0px) {
+                                root.step-by(root.step);
+                                return accept;
+                            } else if (ev.delta-y < 0px) {
+                                root.step-by(-root.step);
+                                return accept;
+                            }
+                            reject
+                        }
+                    }
+
+                    Image {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 10px;
+                        height: 10px;
+                        source: Theme.icon-chevron-down;
+                        colorize: !root.enabled
+                            ? Theme.text-disabled
+                            : down-touch.has-hover
+                                ? Theme.accent
+                                : Theme.text-secondary;
+                    }
+                }
+            }
+        }
+    }
+}

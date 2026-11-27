@@ -11,7 +11,7 @@ export struct ConsoleLogLine {
 }
 
 export component ConsoleWindow inherits Window {
-    title: "Minecraft Console — Crab";
+    title: "Minecraft Console — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     forward-focus: console-key-scope;
@@ -22,8 +22,11 @@ export component ConsoleWindow inherits Window {
     background: Theme.bg-primary;
 
     in property <string> instance-name: "";
+    in property <image> instance-icon;
+    in property <bool> has-instance-icon: false;
     in property <string> process-status: "Idle";
     in property <bool> is-running: false;
+    in-out property <bool> copied-feedback: false;
     in-out property <string> search-query: "";
     in-out property <bool> autoscroll: true;
     in-out property <bool> word-wrap: true;
@@ -46,16 +49,54 @@ export component ConsoleWindow inherits Window {
     callback open-log-folder-clicked();
     callback stop-game-clicked();
 
+    Timer {
+        interval: 2000ms;
+        running: root.copied-feedback;
+        triggered => {
+            root.copied-feedback = false;
+        }
+    }
+
     VerticalLayout {
-        // Barra superior do console
+        // Barra superior do console (ícone da instância + nome + status + ações)
         Rectangle {
-            height: 46px;
+            height: 50px;
             background: Theme.bg-secondary;
 
             HorizontalLayout {
                 padding-left: Theme.space-md;
                 padding-right: Theme.space-md;
                 spacing: Theme.space-sm;
+
+                // Ícone da instância ao lado do nome
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-primary;
+                        border-width: 1px;
+                        border-color: Theme.border-subtle;
+
+                        if root.has-instance-icon: Image {
+                            x: 3px;
+                            y: 3px;
+                            width: 22px;
+                            height: 22px;
+                            source: root.instance-icon;
+                            image-fit: contain;
+                        }
+                        if !root.has-instance-icon: Image {
+                            x: 5px;
+                            y: 5px;
+                            width: 18px;
+                            height: 18px;
+                            source: Theme.icon-cube;
+                            colorize: Theme.accent;
+                        }
+                    }
+                }
 
                 Text {
                     text: root.instance-name;
@@ -69,16 +110,29 @@ export component ConsoleWindow inherits Window {
                     height: 22px;
                     y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius-sm;
-                    background: Theme.bg-primary;
+                    background: root.is-running ? Theme.accent-muted : Theme.bg-primary;
                     border-width: 1px;
                     border-color: root.is-running ? Theme.accent : Theme.border;
 
                     HorizontalLayout {
-                        padding-left: Theme.space-sm;
-                        padding-right: Theme.space-sm;
+                        padding-left: 7px;
+                        padding-right: 8px;
+                        spacing: 5px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 11px;
+                                height: 11px;
+                                source: root.is-running ? Theme.icon-play : Theme.icon-square;
+                                colorize: root.is-running ? Theme.accent : Theme.text-disabled;
+                            }
+                        }
+
                         Text {
                             text: root.process-status;
-                            font-size: Theme.font-xs;
+                            font-size: 11px;
+                            font-weight: 600;
                             color: root.is-running ? Theme.accent : Theme.text-secondary;
                             vertical-alignment: center;
                         }
@@ -90,10 +144,11 @@ export component ConsoleWindow inherits Window {
                 }
 
                 CrabButton {
-                    text: "Copy Log";
-                    icon: @image-url("../../assets/icons/copy.svg");
+                    text: root.copied-feedback ? "Copied!" : "Copy Log";
+                    icon: root.copied-feedback ? Theme.icon-check : Theme.icon-copy;
                     has-icon: true;
                     variant: "secondary";
+                    tooltip: "Copy all console lines to clipboard";
                     y: (parent.height - self.height) / 2;
                     clicked => {
                         root.copy-log-clicked();
@@ -102,9 +157,10 @@ export component ConsoleWindow inherits Window {
 
                 CrabButton {
                     text: "Clear";
-                    icon: @image-url("../../assets/icons/trash.svg");
+                    icon: Theme.icon-trash;
                     has-icon: true;
                     variant: "secondary";
+                    tooltip: "Clear visible console output";
                     y: (parent.height - self.height) / 2;
                     clicked => {
                         if (root.confirm-before-clear) {
@@ -116,10 +172,11 @@ export component ConsoleWindow inherits Window {
                 }
 
                 CrabButton {
-                    text: "Open Log Folder";
-                    icon: @image-url("../../assets/icons/folder.svg");
+                    text: "Logs Folder";
+                    icon: Theme.icon-folder;
                     has-icon: true;
                     variant: "secondary";
+                    tooltip: "Open Minecraft logs directory";
                     y: (parent.height - self.height) / 2;
                     clicked => {
                         root.open-log-folder-clicked();
@@ -128,10 +185,12 @@ export component ConsoleWindow inherits Window {
 
                 CrabButton {
                     text: "Stop Game";
-                    icon: @image-url("../../assets/icons/square.svg");
+                    icon: Theme.icon-square;
                     has-icon: true;
                     variant: "danger";
                     enabled: root.is-running;
+                    tooltip: "Terminate running Minecraft process";
+                    tooltip-align: "end";
                     y: (parent.height - self.height) / 2;
                     clicked => {
                         root.stop-game-clicked();
@@ -199,11 +258,25 @@ export component ConsoleWindow inherits Window {
                     y: (parent.height - self.height) / 2;
                     text <=> root.search-query;
                     placeholder: "Filter logs...";
-                    leading-icon: @image-url("../../assets/icons/search.svg");
+                    leading-icon: Theme.icon-search;
                     has-leading-icon: true;
                     edited(q) => {
                         root.search-changed(q);
                     }
+                }
+
+                Text {
+                    text: root.lines.length == 1 ? "1 line" : root.lines.length + " lines";
+                    font-size: Theme.font-xs;
+                    color: Theme.text-disabled;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 1px;
+                    height: 16px;
+                    y: (parent.height - self.height) / 2;
+                    background: Theme.border-subtle;
                 }
 
                 CrabCheckbox {

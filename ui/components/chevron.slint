@@ -10,12 +10,12 @@ export component ChevronIcon inherits VerticalLayout {
 
     Image {
         source: root.direction == "right"
-            ? @image-url("../../assets/icons/chevron-right.svg")
+            ? Theme.icon-chevron-right
             : root.direction == "up"
-                ? @image-url("../../assets/icons/chevron-up.svg")
+                ? Theme.icon-chevron-up
                 : root.direction == "left"
-                    ? @image-url("../../assets/icons/chevron-left.svg")
-                    : @image-url("../../assets/icons/chevron-down.svg");
+                    ? Theme.icon-chevron-left
+                    : Theme.icon-chevron-down;
         width: root.icon-size;
         height: root.icon-size;
         colorize: root.icon-color;

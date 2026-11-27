@@ -5,7 +5,7 @@ import { CrabDialogFrame } from "../components/dialog-window.slint";
 
 /// Janela nativa dedicada para renomear instâncias (acionada via F2 ou menu de contexto).
 export component RenameInstanceWindow inherits Window {
-    title: "Rename Instance — Crab";
+    title: "Rename Instance — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 380px;
@@ -60,7 +60,7 @@ export component RenameInstanceWindow inherits Window {
 
             CrabButton {
                 text: "Cancel";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancel-clicked(); }
@@ -68,7 +68,7 @@ export component RenameInstanceWindow inherits Window {
 
             CrabButton {
                 text: "Rename";
-                icon: @image-url("../../assets/icons/check.svg");
+                icon: Theme.icon-check;
                 has-icon: true;
                 variant: "primary";
                 enabled: root.name-input != "";

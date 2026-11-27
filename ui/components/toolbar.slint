@@ -20,10 +20,10 @@ export component CrabToolbar inherits Rectangle {
     in property <length> window-height: 660px;
 
     callback add-instance-clicked();
-    callback folders-toggled(length, length, length, length);   // x, y, w, h
-    callback create-group-clicked();
+    callback folders-toggled(length, length, length, length);   // btn_x, bar_y, btn_w, bar_h
+    callback groups-toggled(length, length, length, length);    // btn_x, bar_y, btn_w, bar_h
     callback settings-clicked();
-    callback accounts-toggled(length, length, length, length);  // x, y, w, h
+    callback accounts-toggled(length, length, length, length);  // btn_x, bar_y, btn_w, bar_h
     callback search-changed(string);
     callback clear-search-clicked();
     callback toolbar-right-clicked(length, length);
@@ -34,22 +34,24 @@ export component CrabToolbar inherits Rectangle {
     private property <length> btn-height: root.compact-toolbar ? 24px : Theme.toolbar-button-height;
 
     height: root.compact-toolbar ? 34px : Theme.toolbar-height;
-    background: Theme.is-vice-theme ? transparent : Theme.bg-secondary;
+    background: Theme.bg-secondary;
     clip: true;
 
-    // Real Gaussian backdrop blur para o tema especial Vice
-    if Theme.is-vice-theme: Image {
+    // Real Gaussian backdrop blur para o tema especial Vice (respeita Disable Special Effects e Wallpaper Opacity)
+    if Theme.is-vice-theme && !Theme.disable-special-effects && Theme.wallpaper-opacity > 0.0: Image {
         x: 0px;
         y: -root.blur-offset-y;
         width: root.window-width;
         height: root.window-height;
         source: @image-url("../../assets/themes/vice/wallpaper-blurred.png");
         image-fit: cover;
+        opacity: Theme.wallpaper-opacity;
     }
-    if Theme.is-vice-theme: Rectangle {
+    if Theme.is-vice-theme && !Theme.disable-special-effects && Theme.wallpaper-opacity > 0.0: Rectangle {
         width: parent.width;
         height: parent.height;
         background: #30253894;
+        opacity: Theme.wallpaper-opacity;
     }
 
     // Divisor sutil na borda voltada para o conteúdo
@@ -108,11 +110,14 @@ export component CrabToolbar inherits Rectangle {
 
         CrabButton {
             text: root.show-toolbar-labels ? Strings.add-instance : "";
-            icon: @image-url("../../assets/icons/plus.svg");
+            icon: Theme.icon-plus;
             has-icon: true;
             variant: "ghost";
             height: root.btn-height;
             y: (parent.height - self.height) / 2;
+            tooltip: "Create a new Minecraft instance";
+            tooltip-align: "start";
+            tooltip-above: root.toolbar-position == "bottom";
             clicked => {
                 if (!root.customize-layout-mode) {
                     root.add-instance-clicked();
@@ -123,19 +128,44 @@ export component CrabToolbar inherits Rectangle {
 
         folders-btn := CrabButton {
             text: root.show-toolbar-labels ? "Folders" : "";
-            icon: @image-url("../../assets/icons/folder.svg");
+            icon: Theme.icon-folder;
             has-icon: true;
             show-chevron: root.show-toolbar-labels;
             variant: "ghost";
             height: root.btn-height;
             y: (parent.height - self.height) / 2;
+            tooltip: "Open launcher directories";
+            tooltip-above: root.toolbar-position == "bottom";
             clicked => {
                 if (!root.customize-layout-mode) {
                     root.folders-toggled(
                         self.absolute-position.x,
-                        self.absolute-position.y,
+                        root.absolute-position.y,
                         self.width,
-                        self.height
+                        root.height
+                    );
+                }
+            }
+            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
+        }
+
+        groups-button := CrabButton {
+            text: root.show-toolbar-labels ? "Groups" : "";
+            icon: Theme.icon-folder-plus;
+            has-icon: true;
+            show-chevron: root.show-toolbar-labels;
+            variant: "ghost";
+            height: root.btn-height;
+            y: (parent.height - self.height) / 2;
+            tooltip: "Create or manage instance groups";
+            tooltip-above: root.toolbar-position == "bottom";
+            clicked => {
+                if (!root.customize-layout-mode) {
+                    root.groups-toggled(
+                        self.absolute-position.x,
+                        root.absolute-position.y,
+                        self.width,
+                        root.height
                     );
                 }
             }
@@ -143,27 +173,14 @@ export component CrabToolbar inherits Rectangle {
         }
 
         CrabButton {
-            text: root.show-toolbar-labels ? "Create Group" : "";
-            icon: @image-url("../../assets/icons/folder-plus.svg");
-            has-icon: true;
-            variant: "ghost";
-            height: root.btn-height;
-            y: (parent.height - self.height) / 2;
-            clicked => {
-                if (!root.customize-layout-mode) {
-                    root.create-group-clicked();
-                }
-            }
-            right-clicked(mx, my) => { root.toolbar-right-clicked(mx, my); }
-        }
-
-        CrabButton {
             text: root.show-toolbar-labels ? Strings.settings : "";
-            icon: @image-url("../../assets/icons/settings.svg");
+            icon: Theme.icon-settings;
             has-icon: true;
             variant: "ghost";
             height: root.btn-height;
             y: (parent.height - self.height) / 2;
+            tooltip: "Open launcher settings";
+            tooltip-above: root.toolbar-position == "bottom";
             clicked => {
                 if (!root.customize-layout-mode) {
                     root.settings-clicked();
@@ -184,37 +201,42 @@ export component CrabToolbar inherits Rectangle {
             y: (parent.height - self.height) / 2;
             text <=> root.instance-search-query;
             placeholder: "Search instances...";
-            leading-icon: @image-url("../../assets/icons/search.svg");
+            leading-icon: Theme.icon-search;
             has-leading-icon: true;
             edited(q) => { root.search-changed(q); }
         }
 
         if root.search-visible && root.instance-search-query != "": CrabButton {
             text: "";
-            icon: @image-url("../../assets/icons/x.svg");
+            icon: Theme.icon-x;
             has-icon: true;
             variant: "ghost";
             height: root.btn-height;
             y: (parent.height - self.height) / 2;
+            tooltip: "Clear search";
+            tooltip-above: root.toolbar-position == "bottom";
             clicked => { root.clear-search-clicked(); }
         }
 
         // Seletor de contas (sem conta ativa)
         if !root.has-active-account: CrabButton {
             text: root.show-toolbar-labels ? Strings.accounts : "";
-            icon: @image-url("../../assets/icons/user.svg");
+            icon: Theme.icon-user;
             has-icon: true;
             show-chevron: root.show-toolbar-labels;
             variant: "ghost";
             height: root.btn-height;
             y: (parent.height - self.height) / 2;
+            tooltip: "Switch or manage Minecraft accounts";
+            tooltip-align: "end";
+            tooltip-above: root.toolbar-position == "bottom";
             clicked => {
                 if (!root.customize-layout-mode) {
                     root.accounts-toggled(
                         self.absolute-position.x,
-                        self.absolute-position.y,
+                        root.absolute-position.y,
                         self.width,
-                        self.height
+                        root.height
                     );
                 }
             }
@@ -238,9 +260,9 @@ export component CrabToolbar inherits Rectangle {
                     if (!root.customize-layout-mode) {
                         root.accounts-toggled(
                             acc-btn.absolute-position.x,
-                            acc-btn.absolute-position.y,
+                            root.absolute-position.y,
                             acc-btn.width,
-                            acc-btn.height
+                            root.height
                         );
                     }
                 }

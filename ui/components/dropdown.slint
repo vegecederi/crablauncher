@@ -21,12 +21,35 @@ export component CrabDropdown inherits Rectangle {
     in property <bool> has-selected-icon: false;
     in property <bool> enabled: true;
     in property <bool> open-upward: false;
+    in property <bool> show-scroll-arrows: false;
+    in property <bool> preview-option-font: false;
+    in-out property <int> current-index: -1;
 
     callback selected(string);
 
     private property <int> highlighted-index: 0;
-    private property <length> content-height: root.options.length * 30px + 8px;
-    private property <length> popup-height: min(218px, max(38px, root.content-height));
+    private property <length> item-height: 34px;
+    private property <length> item-spacing: 4px;
+    private property <length> content-height: root.options.length > 0
+        ? root.options.length * root.item-height + (root.options.length - 1) * root.item-spacing + 12px
+        : 44px;
+    private property <length> popup-height: min(268px, max(46px, root.content-height));
+
+    function step-option(delta: int) {
+        if (!root.enabled || root.options.length == 0) {
+            return;
+        }
+        let base = root.current-index >= 0 && root.current-index < root.options.length
+            ? root.current-index
+            : max(0, min(root.options.length - 1, root.highlighted-index));
+        let next = max(0, min(root.options.length - 1, base + delta));
+        if (next != base && root.options[next].enabled) {
+            root.current-index = next;
+            root.highlighted-index = next;
+            root.selected-id = root.options[next].id;
+            root.selected(root.options[next].id);
+        }
+    }
 
     height: Theme.button-height;
     vertical-stretch: 0;
@@ -68,6 +91,19 @@ export component CrabDropdown inherits Rectangle {
             clicked => {
                 popup.show();
             }
+            scroll-event(ev) => {
+                if (!root.enabled || root.options.length == 0) {
+                    return reject;
+                }
+                if (ev.delta-y > 0px) {
+                    root.step-option(-1);
+                    return accept;
+                } else if (ev.delta-y < 0px) {
+                    root.step-option(1);
+                    return accept;
+                }
+                reject
+            }
         }
 
         HorizontalLayout {
@@ -87,6 +123,7 @@ export component CrabDropdown inherits Rectangle {
 
             Text {
                 text: root.selected-label;
+                font-family: root.preview-option-font && root.selected-id != "" ? root.selected-id : Theme.font-family;
                 font-size: Theme.font-sm;
                 font-weight: 500;
                 color: root.enabled ? Theme.text-primary : Theme.text-disabled;
@@ -95,10 +132,25 @@ export component CrabDropdown inherits Rectangle {
                 overflow: elide;
             }
 
-            ChevronIcon {
+            if !root.show-scroll-arrows: ChevronIcon {
                 direction: "down";
                 icon-size: 14px;
                 icon-color: root.enabled ? Theme.text-secondary : Theme.text-disabled;
+            }
+
+            if root.show-scroll-arrows: VerticalLayout {
+                alignment: center;
+                spacing: 0px;
+                ChevronIcon {
+                    direction: "up";
+                    icon-size: 10px;
+                    icon-color: root.enabled ? Theme.text-secondary : Theme.text-disabled;
+                }
+                ChevronIcon {
+                    direction: "down";
+                    icon-size: 10px;
+                    icon-color: root.enabled ? Theme.text-secondary : Theme.text-disabled;
+                }
             }
         }
     }
@@ -165,11 +217,11 @@ export component CrabDropdown inherits Rectangle {
 
                 VerticalLayout {
                     width: parent.width;
-                    padding: 4px;
-                    spacing: 0px;
+                    padding: 6px;
+                    spacing: root.item-spacing;
 
                     for opt[idx] in root.options: Rectangle {
-                        height: 30px;
+                        height: root.item-height;
                         vertical-stretch: 0;
                         border-radius: Theme.radius-sm;
                         background: !opt.enabled
@@ -181,9 +233,9 @@ export component CrabDropdown inherits Rectangle {
                                     : transparent;
 
                         HorizontalLayout {
-                            padding-left: Theme.space-sm;
-                            padding-right: Theme.space-sm;
-                            spacing: Theme.space-sm;
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: Theme.space-md;
 
                             if opt.has-icon: VerticalLayout {
                                 alignment: center;
@@ -197,6 +249,7 @@ export component CrabDropdown inherits Rectangle {
 
                             Text {
                                 text: opt.label;
+                                font-family: root.preview-option-font && opt.id != "" ? opt.id : Theme.font-family;
                                 font-size: Theme.font-sm;
                                 font-weight: opt.id == root.selected-id ? 600 : 400;
                                 color: !opt.enabled
@@ -221,6 +274,8 @@ export component CrabDropdown inherits Rectangle {
                             enabled: opt.enabled;
                             mouse-cursor: opt.enabled ? pointer : default;
                             clicked => {
+                                root.current-index = idx;
+                                root.highlighted-index = idx;
                                 root.selected-id = opt.id;
                                 root.selected(opt.id);
                                 popup.close();

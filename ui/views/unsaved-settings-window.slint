@@ -1,0 +1,53 @@
+import { Theme } from "../theme.slint";
+import { CrabButton } from "../components/button.slint";
+import { CrabDialogFrame } from "../components/dialog-window.slint";
+
+export component UnsavedSettingsWindow inherits Window {
+    title: "Unsaved Changes — Crab Launcher";
+    icon: @image-url("../../assets/app/logo-icon.svg");
+    default-font-family: Theme.font-family;
+    preferred-width: 440px;
+    preferred-height: 200px;
+    min-width: 420px;
+    min-height: 190px;
+    background: Theme.bg-secondary;
+    callback cancel();
+    callback discard();
+    callback save();
+
+    CrabDialogFrame {
+        width: parent.width;
+        height: parent.height;
+        heading: "Unsaved changes";
+        subtitle: "Save your changes before closing settings?";
+        escape-pressed => { root.cancel(); }
+        Text {
+            text: "Your settings have pending changes. Closing without saving will discard them.";
+            font-size: Theme.font-sm;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+        HorizontalLayout {
+            spacing: Theme.space-sm;
+            alignment: end;
+            CrabButton {
+                text: "Cancel";
+                variant: "ghost";
+                clicked => { root.cancel(); }
+            }
+            CrabButton {
+                text: "Don't Save";
+                variant: "secondary";
+                clicked => { root.discard(); }
+            }
+            CrabButton {
+                text: "Save";
+                icon: Theme.icon-save;
+                has-icon: true;
+                variant: "primary";
+                clicked => { root.save(); }
+            }
+        }
+    }
+}

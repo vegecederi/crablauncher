@@ -12,12 +12,12 @@ export struct SelectableIconItem {
 
 /// Janela "Select Instance Icon" para escolher, pesquisar, importar, renomear e excluir ícones gerenciados pelo Crab.
 export component SelectIconWindow inherits Window {
-    title: "Select Instance Icon — Crab";
+    title: "Select Instance Icon — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 600px;
     preferred-height: 480px;
-    min-width: 480px;
+    min-width: 520px;
     min-height: 380px;
     background: Theme.bg-primary;
 
@@ -35,17 +35,6 @@ export component SelectIconWindow inherits Window {
     in-out property <length> context-x: 0px;
     in-out property <length> context-y: 0px;
 
-    // Diálogo Rename Icon
-    in-out property <bool> show-rename-dialog: false;
-    in-out property <string> rename-target-key: "";
-    in-out property <string> rename-input: "";
-
-    // Diálogo Delete Icon Confirmation
-    in-out property <bool> show-delete-dialog: false;
-    in-out property <string> delete-target-key: "";
-    in-out property <string> delete-target-label: "";
-    in-out property <int> delete-usage-count: 0;
-
     callback search-changed(string);
     callback import-icon-clicked();
     callback open-icons-folder-clicked();
@@ -59,6 +48,15 @@ export component SelectIconWindow inherits Window {
     callback cancel-clicked();
 
     VerticalLayout {
+        Text {
+            text: root.instance-name == "" ? "Instance Icons" : "Instance Icons · " + root.instance-name;
+            height: 36px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-weight: 600;
+            color: Theme.text-primary;
+            overflow: elide;
+        }
         // Barra superior: busca + Import + Delete Icon + Icons Folder
         Rectangle {
             height: 48px;
@@ -74,37 +72,28 @@ export component SelectIconWindow inherits Window {
                     y: (parent.height - self.height) / 2;
                     text <=> root.search-query;
                     placeholder: "Search icons...";
-                    leading-icon: @image-url("../../assets/icons/search.svg");
+                    leading-icon: Theme.icon-search;
                     has-leading-icon: true;
                     edited(q) => { root.search-changed(q); }
                 }
 
                 CrabButton {
                     text: "Import Icon";
-                    icon: @image-url("../../assets/icons/plus.svg");
+                    icon: Theme.icon-plus;
                     has-icon: true;
-                    variant: "primary";
+                    variant: "secondary";
+                    tooltip: "Import a custom PNG, SVG, or WebP icon";
                     y: (parent.height - self.height) / 2;
                     clicked => { root.import-icon-clicked(); }
                 }
 
                 CrabButton {
-                    text: "Delete Icon";
-                    icon: @image-url("../../assets/icons/trash.svg");
-                    has-icon: true;
-                    variant: "flat-danger";
-                    enabled: root.selected-key != "";
-                    y: (parent.height - self.height) / 2;
-                    clicked => {
-                        root.request-delete-icon(root.selected-key, root.selected-key);
-                    }
-                }
-
-                CrabButton {
                     text: "Icons Folder";
-                    icon: @image-url("../../assets/icons/folder.svg");
+                    icon: Theme.icon-folder;
                     has-icon: true;
                     variant: "secondary";
+                    tooltip: "Open custom icons folder";
+                    tooltip-align: "end";
                     y: (parent.height - self.height) / 2;
                     clicked => { root.open-icons-folder-clicked(); }
                 }
@@ -132,11 +121,11 @@ export component SelectIconWindow inherits Window {
                 width: icon-flick.cell-w;
                 height: icon-flick.cell-h;
                 border-radius: Theme.radius-sm;
-                border-width: item.key == root.selected-key ? 1px : 0px;
-                border-color: item.key == root.selected-key ? Theme.accent : transparent;
+                border-width: 1px;
+                border-color: item.key == root.selected-key ? Theme.accent : Theme.border-subtle;
                 background: item.key == root.selected-key
                     ? Theme.accent-muted
-                    : ic-touch.has-hover ? Theme.bg-secondary : transparent;
+                    : ic-touch.has-hover ? Theme.bg-interactive : Theme.bg-secondary;
 
                 ic-touch := TouchArea {
                     mouse-cursor: pointer;
@@ -171,7 +160,7 @@ export component SelectIconWindow inherits Window {
                     HorizontalLayout {
                         alignment: center;
                         if item.is-default: Image {
-                            source: @image-url("../../assets/icons/cube.svg");
+                            source: Theme.icon-cube;
                             width: 44px;
                             height: 44px;
                             colorize: Theme.accent;
@@ -209,7 +198,7 @@ export component SelectIconWindow inherits Window {
 
                 CrabButton {
                     text: "Reset to Default";
-                    icon: @image-url("../../assets/icons/refresh.svg");
+                    icon: Theme.icon-refresh;
                     has-icon: true;
                     variant: "secondary";
                     y: (parent.height - self.height) / 2;
@@ -237,7 +226,7 @@ export component SelectIconWindow inherits Window {
 
                 CrabButton {
                     text: "Apply";
-                    icon: @image-url("../../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "primary";
                     y: (parent.height - self.height) / 2;
@@ -264,18 +253,16 @@ export component SelectIconWindow inherits Window {
 
             ContextMenuItem {
                 text: "Rename Icon";
-                icon: @image-url("../../assets/icons/edit.svg");
+                icon: Theme.icon-edit;
                 clicked => {
                     root.show-icon-context-menu = false;
-                    root.rename-target-key = root.context-icon-key;
-                    root.rename-input = root.context-icon-label;
-                    root.show-rename-dialog = true;
+                    root.request-rename-icon-dialog(root.context-icon-key, root.context-icon-label);
                 }
             }
 
             ContextMenuItem {
                 text: "Delete Icon";
-                icon: @image-url("../../assets/icons/trash.svg");
+                icon: Theme.icon-trash;
                 danger: true;
                 clicked => {
                     root.show-icon-context-menu = false;

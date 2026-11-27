@@ -5,7 +5,7 @@ import { CrabDialogFrame } from "../components/dialog-window.slint";
 
 /// Janela nativa para adicionar ou editar um servidor na aba Servers.
 export component ServerDialogWindow inherits Window {
-    title: "Add Server — Crab";
+    title: "Add Server — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 390px;
@@ -70,7 +70,7 @@ export component ServerDialogWindow inherits Window {
 
             CrabButton {
                 text: "Cancel";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancelled(); }
@@ -78,7 +78,7 @@ export component ServerDialogWindow inherits Window {
 
             CrabButton {
                 text: "Add Server";
-                icon: @image-url("../../assets/icons/check.svg");
+                icon: Theme.icon-check;
                 has-icon: true;
                 variant: "primary";
                 enabled: root.server-name != "" && root.server-address != "";

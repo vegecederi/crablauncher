@@ -17,7 +17,7 @@ export struct DownloadTaskRow {
 /// Exibe etapa atual, progresso geral com porcentagem, tarefa atual com animação indeterminada real,
 /// métricas de download (velocidade/bytes/arquivos) e controles funcionais de Pause/Resume e Abort.
 export component TaskProgressWindow inherits Window {
-    title: "Please wait... — Crab";
+    title: "Please wait... — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 560px;
@@ -41,7 +41,10 @@ export component TaskProgressWindow inherits Window {
     in property <string> eta-text: "";
     in property <string> files-text: "";
     in property <string> current-file: "";
-    in property <string> elapsed-text: "0s";
+    in-out property <int> elapsed-seconds: 0;
+    in property <string> elapsed-text: root.elapsed-seconds >= 60
+        ? floor(root.elapsed-seconds / 60) + "m " + mod(root.elapsed-seconds, 60) + "s"
+        : root.elapsed-seconds + "s";
     in property <string> details-text: "";
     in property <string> error-message: "";
     in property <[DownloadTaskRow]> download-items: [];
@@ -63,6 +66,15 @@ export component TaskProgressWindow inherits Window {
     private property <float> anim-phase: root.indeterminate && !root.is-paused && !root.is-finished
         ? (mod(animation-tick() / 1ms, 1400) / 1400.0)
         : 0.0;
+
+    // Cronômetro de tempo decorrido (pausa quando is-paused e para quando is-finished)
+    Timer {
+        interval: 1000ms;
+        running: !root.is-finished && !root.is-paused;
+        triggered => {
+            root.elapsed-seconds += 1;
+        }
+    }
 
     FocusScope {
         key-pressed(ev) => {
@@ -168,7 +180,7 @@ export component TaskProgressWindow inherits Window {
                                         ? @image-url("../../assets/providers/modrinth.svg")
                                         : item.provider == "CurseForge"
                                             ? @image-url("../../assets/providers/curseforge.svg")
-                                            : @image-url("../../assets/icons/download.svg");
+                                            : Theme.icon-download;
                                     width: 20px;
                                     height: 20px;
                                     image-fit: contain;
@@ -372,7 +384,7 @@ export component TaskProgressWindow inherits Window {
 
                 if !root.is-finished: CrabButton {
                     text: root.is-cancelling ? "Aborting..." : "Abort";
-                    icon: @image-url("../../assets/icons/x.svg");
+                    icon: Theme.icon-x;
                     has-icon: true;
                     variant: "danger";
                     enabled: !root.is-cancelling;
@@ -381,7 +393,7 @@ export component TaskProgressWindow inherits Window {
 
                 if root.is-finished: CrabButton {
                     text: "Close";
-                    icon: @image-url("../../assets/icons/check.svg");
+                    icon: Theme.icon-check;
                     has-icon: true;
                     variant: "primary";
                     clicked => { root.hide-clicked(); }

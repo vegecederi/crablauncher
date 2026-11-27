@@ -11,7 +11,6 @@ pub mod manifest;
 pub mod minecraft;
 pub mod modloaders;
 pub mod mods;
-pub mod presets;
 pub mod resources;
 pub mod tasks;
 pub mod themes;

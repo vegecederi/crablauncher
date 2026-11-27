@@ -1,5 +1,6 @@
 use crate::core::instance::{
     sanitize_dir_name, validate_instance_name, InstallationStatus, InstanceMetadata,
+    ManagedModpackInfo,
 };
 use crate::core::version::VersionType;
 use crate::error::{LauncherError, Result};
@@ -34,6 +35,10 @@ impl InstanceManager {
     /// Instalações que ficaram em estado `installing` após encerramento abrupto
     /// são marcadas como `incomplete` automaticamente.
     pub async fn list_instances(&self) -> Result<Vec<InstanceMetadata>> {
+        self.read_instances(true).await
+    }
+
+    async fn read_instances(&self, recover_interrupted: bool) -> Result<Vec<InstanceMetadata>> {
         let instances_dir = self.paths.instances_dir();
         if !instances_dir.exists() {
             return Ok(Vec::new());
@@ -64,6 +69,9 @@ impl InstanceManager {
             let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
+            if dir_name.starts_with(".crab-import-") {
+                continue;
+            }
 
             let metadata_path = path.join("instance.json");
             if !metadata_path.exists() {
@@ -79,7 +87,9 @@ impl InstanceManager {
                     meta.dir_name = dir_name.to_string();
 
                     // Recupera instalações interrompidas por fechamento inesperado.
-                    if meta.installation.status == InstallationStatus::Installing {
+                    if recover_interrupted
+                        && meta.installation.status == InstallationStatus::Installing
+                    {
                         warn!(
                             "Instance '{}' ({}) was interrupted during installation; marking as incomplete.",
                             meta.name, meta.id
@@ -147,14 +157,151 @@ impl InstanceManager {
         Ok(metadata)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn publish_import(
+        &self,
+        staging: &Path,
+        name: &str,
+        minecraft: &str,
+        version_type: VersionType,
+        group: Option<String>,
+        loader: Option<crate::core::components::model::ModloaderSpec>,
+        modpack: Option<ManagedModpackInfo>,
+        icon: Option<&[u8]>,
+    ) -> Result<InstanceMetadata> {
+        let dir = self.allocate_unique_dir_name(name)?;
+        let mut instance = InstanceMetadata::new(name, minecraft, version_type, &dir)?;
+        instance.group_id = group;
+        instance.modloader = loader
+            .as_ref()
+            .map(|l| format!("{}:{}", l.kind.short_name(), l.version));
+        instance.modloader_spec = loader;
+        instance.modpack = modpack;
+        let target = self.safe_instance_dir(&dir)?;
+        for subdir in MINECRAFT_SUBDIRS {
+            let path = staging.join(".minecraft").join(subdir);
+            fs::create_dir_all(&path)
+                .await
+                .map_err(|source| LauncherError::Io { path, source })?;
+        }
+        let icon_path = if let Some((bytes, extension)) = icon.and_then(|bytes| {
+            let extension = match image::guess_format(bytes).ok()? {
+                image::ImageFormat::Png => "png",
+                image::ImageFormat::Jpeg => "jpg",
+                image::ImageFormat::WebP => "webp",
+                _ => return None,
+            };
+            Some((bytes, extension))
+        }) {
+            let key = format!("{}.{extension}", instance.id);
+            let path = self.paths.icons_dir().join(&key);
+            fs::create_dir_all(self.paths.icons_dir())
+                .await
+                .map_err(|source| LauncherError::Io {
+                    path: self.paths.icons_dir(),
+                    source,
+                })?;
+            fs::write(&path, bytes)
+                .await
+                .map_err(|source| LauncherError::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+            instance.icon_key = Some(key);
+            Some(path)
+        } else {
+            None
+        };
+        let result = async {
+            write_json_atomic(&staging.join("instance.json"), &instance).await?;
+            fs::rename(staging, &target)
+                .await
+                .map_err(|source| LauncherError::Io {
+                    path: target,
+                    source,
+                })
+        }
+        .await;
+        if let Err(err) = result {
+            if let Some(path) = icon_path {
+                if let Err(cleanup) = fs::remove_file(&path).await {
+                    warn!("Failed to remove staged modpack icon: {cleanup}");
+                }
+            }
+            return Err(err);
+        }
+        Ok(instance)
+    }
+
+    /// Atualiza versão do Minecraft, modloader e metadados de modpack de uma instância existente.
+    pub async fn apply_modpack_update(
+        &self,
+        id: &str,
+        minecraft: &str,
+        version_type: VersionType,
+        loader: Option<crate::core::components::model::ModloaderSpec>,
+        modpack: ManagedModpackInfo,
+    ) -> Result<InstanceMetadata> {
+        let mut metadata = self.find_by_id(id).await?;
+        metadata.minecraft_version = minecraft.trim().to_string();
+        metadata.version_type = version_type;
+        metadata.modloader = loader
+            .as_ref()
+            .map(|l| format!("{}:{}", l.kind.short_name(), l.version));
+        metadata.modloader_spec = loader;
+        metadata.modpack = Some(modpack);
+        metadata.updated_at = chrono::Utc::now();
+        let metadata_path = self.paths.instance_metadata_file(&metadata.dir_name);
+        write_json_atomic(&metadata_path, &metadata).await?;
+        Ok(metadata)
+    }
+
     /// Renomeia a instância atualizando apenas `instance.json`, sem mover arquivos no disco.
     pub async fn rename_instance(&self, id: &str, new_name: &str) -> Result<InstanceMetadata> {
+        self.rename_instance_with_folder(id, new_name, false).await
+    }
+
+    /// Renomeia a instância e, quando `rename_folder` é `true`, renomeia também a pasta física
+    /// preservando mundos, mods, configurações e evitando conflitos de nomes.
+    pub async fn rename_instance_with_folder(
+        &self,
+        id: &str,
+        new_name: &str,
+        rename_folder: bool,
+    ) -> Result<InstanceMetadata> {
         let mut metadata = self.find_by_id(id).await?;
+        let old_dir_name = metadata.dir_name.clone();
         metadata.rename(new_name)?;
+
+        if rename_folder {
+            let desired = sanitize_dir_name(&metadata.name);
+            if desired != old_dir_name {
+                let target_dir_name = self.allocate_unique_dir_name(&metadata.name)?;
+                let old_path = self.safe_instance_dir(&old_dir_name)?;
+                let new_path = self.safe_instance_dir(&target_dir_name)?;
+                if new_path.exists() {
+                    return Err(LauncherError::Launch(format!(
+                        "Target folder '{}' already exists.",
+                        target_dir_name
+                    )));
+                }
+                fs::rename(&old_path, &new_path)
+                    .await
+                    .map_err(|source| LauncherError::Io {
+                        path: new_path.clone(),
+                        source,
+                    })?;
+                metadata.dir_name = target_dir_name;
+            }
+        }
+
         let metadata_path = self.paths.instance_metadata_file(&metadata.dir_name);
         write_json_atomic(&metadata_path, &metadata).await?;
 
-        info!("Renamed instance {} to '{}'", id, metadata.name);
+        info!(
+            "Renamed instance {} to '{}' (folder: {}, renamed_folder={})",
+            id, metadata.name, metadata.dir_name, rename_folder
+        );
         Ok(metadata)
     }
 
@@ -272,7 +419,7 @@ impl InstanceManager {
 
     /// Conta quantas instâncias estão utilizando um determinado ícone personalizado.
     pub async fn count_instances_using_icon(&self, key: &str) -> Result<usize> {
-        let instances = self.list_instances().await?;
+        let instances = self.read_instances(false).await?;
         Ok(instances
             .iter()
             .filter(|i| i.icon_key.as_deref() == Some(key))
@@ -292,7 +439,7 @@ impl InstanceManager {
         }
 
         let mut updated_count = 0usize;
-        let instances = self.list_instances().await?;
+        let instances = self.read_instances(false).await?;
         for mut inst in instances {
             if inst.icon_key.as_deref() == Some(key) {
                 inst.icon_key = None;
@@ -510,6 +657,9 @@ impl InstanceManager {
 
         created.group_id = group_id;
         created.icon_key = source.icon_key.clone();
+        created.modloader = source.modloader.clone();
+        created.modloader_spec = source.modloader_spec.clone();
+        created.modpack = source.modpack.clone();
         created.overrides = source.overrides.clone();
         created.installation = source.installation.clone();
         created.updated_at = chrono::Utc::now();

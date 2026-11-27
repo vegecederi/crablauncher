@@ -1,0 +1,247 @@
+import { Theme } from "../theme.slint";
+
+/// Barra de status unificada do Crab Launcher (utilizada identicamente no topo e no rodapé).
+export component CrabStatusBar inherits Rectangle {
+    in property <string> position: "bottom"; // "top" | "bottom"
+    in property <int> instance-count: 0;
+    in property <string> status-text: "Ready";
+    in property <string> status-kind: "success"; // "success" | "error" | "warning" | "busy" | "downloading" | "running" | "info"
+    in property <bool> is-busy: false;
+    in property <bool> is-running: false;
+    in property <string> selected-instance-id: "";
+    in property <string> selected-instance-playtime: "";
+    in property <string> selected-instance-last-played: "";
+    in property <string> app-version: "v0.1.0";
+    in property <bool> customize-layout-mode: false;
+    in property <length> blur-offset-y: 0px;
+    in property <length> window-width: 1000px;
+    in property <length> window-height: 660px;
+
+    callback drag-started();
+    callback drag-moved(length);
+    callback drag-ended();
+
+    height: Theme.statusbar-height;
+    background: Theme.bg-secondary;
+    clip: true;
+
+    // Real Gaussian backdrop blur para o tema especial Vice (respeita Disable Special Effects e Wallpaper Opacity)
+    if Theme.is-vice-theme && !Theme.disable-special-effects && Theme.wallpaper-opacity > 0.0: Image {
+        x: 0px;
+        y: -root.blur-offset-y;
+        width: root.window-width;
+        height: root.window-height;
+        source: @image-url("../../assets/themes/vice/wallpaper-blurred.png");
+        image-fit: cover;
+        opacity: Theme.wallpaper-opacity;
+    }
+    if Theme.is-vice-theme && !Theme.disable-special-effects && Theme.wallpaper-opacity > 0.0: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #30253894;
+        opacity: Theme.wallpaper-opacity;
+    }
+
+    // Divisor sutil voltado para o conteúdo principal
+    Rectangle {
+        y: root.position == "top" ? parent.height - 1px : 0px;
+        height: 1px;
+        width: parent.width;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-md;
+        padding-right: Theme.space-md;
+        spacing: 10px;
+
+        // Handle de arraste no modo Customize Layout
+        if root.customize-layout-mode: Rectangle {
+            width: 68px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 3px;
+            background: Theme.accent;
+
+            TouchArea {
+                mouse-cursor: grab;
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                        root.drag-started();
+                    } else if (ev.kind == PointerEventKind.up && ev.button == PointerEventButton.left) {
+                        root.drag-ended();
+                    }
+                }
+                moved => {
+                    root.drag-moved(self.absolute-position.y + self.mouse-y);
+                }
+            }
+
+            Text {
+                text: "Drag Bar";
+                font-size: 10px;
+                font-weight: 600;
+                color: Theme.text-on-accent;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Contagem de instâncias com ícone
+        HorizontalLayout {
+            spacing: 5px;
+            alignment: start;
+
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    source: Theme.icon-layers;
+                    width: 12px;
+                    height: 12px;
+                    colorize: Theme.icon-secondary;
+                }
+            }
+
+            Text {
+                text: root.instance-count == 1
+                    ? "1 instance"
+                    : root.instance-count + " instances";
+                font-size: Theme.font-xs;
+                font-weight: 500;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+        }
+
+        // Separador vertical
+        Rectangle {
+            width: 1px;
+            height: 12px;
+            y: (parent.height - self.height) / 2;
+            background: Theme.border;
+        }
+
+        // Status atual com ícone e cor dinâmicos conforme a situação
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            spacing: 6px;
+            alignment: start;
+
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 13px;
+                    height: 13px;
+                    source: root.is-busy
+                        ? Theme.icon-download
+                        : root.status-kind == "error"
+                            ? Theme.icon-x
+                            : root.status-kind == "warning"
+                                ? Theme.icon-info
+                                : root.status-kind == "downloading"
+                                    ? Theme.icon-download
+                                    : root.status-kind == "busy"
+                                        ? Theme.icon-refresh
+                                        : (root.status-kind == "running" || root.is-running)
+                                            ? Theme.icon-play
+                                            : root.status-kind == "info"
+                                                ? Theme.icon-info
+                                                : Theme.icon-check;
+                    colorize: root.is-busy
+                        ? Theme.accent
+                        : root.status-kind == "error"
+                            ? Theme.error-text
+                            : root.status-kind == "warning"
+                                ? Theme.warning-text
+                                : (root.status-kind == "downloading" || root.status-kind == "busy" || root.status-kind == "running" || root.is-running)
+                                    ? Theme.accent
+                                    : root.status-kind == "info"
+                                        ? Theme.icon-secondary
+                                        : Theme.success;
+                }
+            }
+
+            Text {
+                text: root.status-text;
+                font-size: Theme.font-xs;
+                color: root.status-kind == "error"
+                    ? Theme.error-text
+                    : root.status-kind == "warning"
+                        ? Theme.warning-text
+                        : Theme.text-secondary;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // Tempo jogado da instância selecionada
+        if root.selected-instance-id != "" && root.selected-instance-playtime != "": HorizontalLayout {
+            spacing: 5px;
+            alignment: start;
+
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    source: Theme.icon-clock;
+                    width: 12px;
+                    height: 12px;
+                    colorize: Theme.icon-secondary;
+                }
+            }
+
+            Text {
+                text: "Played:";
+                font-size: Theme.font-xs;
+                color: Theme.text-disabled;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: root.selected-instance-playtime;
+                font-size: Theme.font-xs;
+                font-weight: 500;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+        }
+
+        // Última execução da instância selecionada
+        if root.selected-instance-id != "" && root.selected-instance-playtime != "" && root.selected-instance-last-played != "": Rectangle {
+            width: 1px;
+            height: 12px;
+            y: (parent.height - self.height) / 2;
+            background: Theme.border;
+        }
+
+        if root.selected-instance-id != "" && root.selected-instance-playtime != "" && root.selected-instance-last-played != "": HorizontalLayout {
+            spacing: 5px;
+            alignment: start;
+
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    source: Theme.icon-calendar;
+                    width: 12px;
+                    height: 12px;
+                    colorize: Theme.icon-secondary;
+                }
+            }
+
+            Text {
+                text: "Last played:";
+                font-size: Theme.font-xs;
+                color: Theme.text-disabled;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: root.selected-instance-last-played;
+                font-size: Theme.font-xs;
+                font-weight: 500;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

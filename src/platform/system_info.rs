@@ -83,7 +83,7 @@ pub fn format_system_info_report_from_caps(caps: &SystemCapabilities) -> String 
     let avail_ram = format_mib_display(detect_available_memory_mib());
 
     format!(
-        "Crab {}\nOperating System: {}\nCPU Architecture: {}\nPhysical Memory: {} (Available: {})\nGraphics Adapter: {}\nDisplay Session: {}\nGameMode: {}\nMangoHud: {}\nVulkan: {}\nMesa Zink: {}\nUI Toolkit: Slint 1.19\nLicense: MIT",
+        "Crab Launcher v{}\nOperating System: {}\nCPU Architecture: {}\nPhysical Memory: {} (Available: {})\nGraphics Adapter: {}\nDisplay Session: {}\nGameMode: {}\nMangoHud: {}\nVulkan: {}\nMesa Zink: {}\nUI Toolkit: Slint 1.19\nLicense: MIT",
         env!("CARGO_PKG_VERSION"),
         caps.os_name,
         caps.cpu_arch,

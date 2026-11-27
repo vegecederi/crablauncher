@@ -11,7 +11,7 @@ export struct AccountItem {
 }
 
 export component AccountsWindow inherits Window {
-    title: "Accounts — Crab";
+    title: "Accounts — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 540px;
@@ -51,7 +51,7 @@ export component AccountsWindow inherits Window {
 
             CrabButton {
                 text: "Add Offline";
-                icon: @image-url("../../assets/icons/user-plus.svg");
+                icon: Theme.icon-user-plus;
                 has-icon: true;
                 variant: "primary";
                 clicked => {
@@ -185,7 +185,7 @@ export component AccountsWindow inherits Window {
 
             CrabButton {
                 text: "Set Default";
-                icon: @image-url("../../assets/icons/check.svg");
+                icon: Theme.icon-check;
                 has-icon: true;
                 variant: "secondary";
                 enabled: root.selected-account-id != "";
@@ -196,7 +196,7 @@ export component AccountsWindow inherits Window {
 
             CrabButton {
                 text: "Refresh";
-                icon: @image-url("../../assets/icons/refresh.svg");
+                icon: Theme.icon-refresh;
                 has-icon: true;
                 variant: "secondary";
                 enabled: root.selected-account-id != "" && !root.auth-in-progress;
@@ -207,7 +207,7 @@ export component AccountsWindow inherits Window {
 
             CrabButton {
                 text: "Remove";
-                icon: @image-url("../../assets/icons/trash.svg");
+                icon: Theme.icon-trash;
                 has-icon: true;
                 variant: "flat-danger";
                 enabled: root.selected-account-id != "";
@@ -222,7 +222,7 @@ export component AccountsWindow inherits Window {
 
             CrabButton {
                 text: "Close";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => {

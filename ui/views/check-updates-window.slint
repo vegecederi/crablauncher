@@ -17,7 +17,7 @@ export struct UpdateCandidateItem {
 
 /// Janela independente de verificação e instalação de atualizações (Mods, Texture Packs, Shader Packs).
 export component CheckUpdatesWindow inherits Window {
-    title: "Check for Updates — Crab";
+    title: "Check for Updates — Crab Launcher";
     icon: @image-url("../../assets/app/logo-icon.svg");
     default-font-family: Theme.font-family;
     preferred-width: 600px;
@@ -101,7 +101,7 @@ export component CheckUpdatesWindow inherits Window {
                                     ? @image-url("../../assets/providers/modrinth.svg")
                                     : item.provider == "CurseForge"
                                         ? @image-url("../../assets/providers/curseforge.svg")
-                                        : @image-url("../../assets/icons/puzzle.svg");
+                                        : Theme.icon-puzzle;
                                 width: 24px;
                                 height: 24px;
                                 image-fit: contain;
@@ -158,7 +158,7 @@ export component CheckUpdatesWindow inherits Window {
 
             CrabButton {
                 text: "Close";
-                icon: @image-url("../../assets/icons/x.svg");
+                icon: Theme.icon-x;
                 has-icon: true;
                 variant: "secondary";
                 clicked => { root.cancelled(); }
@@ -166,7 +166,7 @@ export component CheckUpdatesWindow inherits Window {
 
             CrabButton {
                 text: "Install Selected";
-                icon: @image-url("../../assets/icons/download.svg");
+                icon: Theme.icon-download;
                 has-icon: true;
                 variant: "primary";
                 enabled: !root.is-checking && root.updates.length > 0;

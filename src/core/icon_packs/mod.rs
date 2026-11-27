@@ -14,7 +14,314 @@ const BUILTIN_ICON_PACKS: &[(&str, &str)] = &[
         "lucide-dark",
         include_str!("../../../assets/icon-packs/lucide-dark/manifest.json"),
     ),
+    (
+        "phosphor-fill",
+        include_str!("../../../assets/icon-packs/phosphor-fill/manifest.json"),
+    ),
+    (
+        "tabler",
+        include_str!("../../../assets/icon-packs/tabler/manifest.json"),
+    ),
+    (
+        "fluent-system",
+        include_str!("../../../assets/icon-packs/fluent-system/manifest.json"),
+    ),
 ];
+
+/// Lista canônica de chaves de ícones temáticos suportados pelos Icon Packs.
+pub const THEMED_ICON_KEYS: &[&str] = &[
+    "arrow-down",
+    "arrow-up",
+    "calendar",
+    "check",
+    "chevron-down",
+    "chevron-left",
+    "chevron-right",
+    "chevron-up",
+    "clock",
+    "coffee",
+    "copy",
+    "cube",
+    "download",
+    "edit",
+    "external-link",
+    "file-text",
+    "flask-conical",
+    "folder-plus",
+    "folder",
+    "info",
+    "layers",
+    "layout-grid",
+    "palette",
+    "play",
+    "plus",
+    "puzzle",
+    "refresh",
+    "save",
+    "scan-search",
+    "search",
+    "settings",
+    "sliders-horizontal",
+    "square",
+    "star",
+    "terminal",
+    "trash",
+    "user-plus",
+    "user",
+    "wrench",
+    "x",
+];
+
+macro_rules! match_pack_icons {
+    ($dir:literal, $key:expr) => {
+        match $key {
+            "arrow-down" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/arrow-down.svg"
+            ))),
+            "arrow-up" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/arrow-up.svg"
+            ))),
+            "calendar" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/calendar.svg"
+            ))),
+            "check" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/check.svg"
+            ))),
+            "chevron-down" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/chevron-down.svg"
+            ))),
+            "chevron-left" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/chevron-left.svg"
+            ))),
+            "chevron-right" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/chevron-right.svg"
+            ))),
+            "chevron-up" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/chevron-up.svg"
+            ))),
+            "clock" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/clock.svg"
+            ))),
+            "coffee" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/coffee.svg"
+            ))),
+            "copy" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/copy.svg"
+            ))),
+            "cube" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/cube.svg"
+            ))),
+            "download" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/download.svg"
+            ))),
+            "edit" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/edit.svg"
+            ))),
+            "external-link" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/external-link.svg"
+            ))),
+            "file-text" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/file-text.svg"
+            ))),
+            "flask-conical" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/flask-conical.svg"
+            ))),
+            "folder-plus" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/folder-plus.svg"
+            ))),
+            "folder" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/folder.svg"
+            ))),
+            "info" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/info.svg"
+            ))),
+            "layers" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/layers.svg"
+            ))),
+            "layout-grid" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/layout-grid.svg"
+            ))),
+            "palette" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/palette.svg"
+            ))),
+            "play" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/play.svg"
+            ))),
+            "plus" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/plus.svg"
+            ))),
+            "puzzle" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/puzzle.svg"
+            ))),
+            "refresh" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/refresh.svg"
+            ))),
+            "save" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/save.svg"
+            ))),
+            "scan-search" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/scan-search.svg"
+            ))),
+            "search" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/search.svg"
+            ))),
+            "settings" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/settings.svg"
+            ))),
+            "sliders-horizontal" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/sliders-horizontal.svg"
+            ))),
+            "square" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/square.svg"
+            ))),
+            "star" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/star.svg"
+            ))),
+            "terminal" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/terminal.svg"
+            ))),
+            "trash" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/trash.svg"
+            ))),
+            "user-plus" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/user-plus.svg"
+            ))),
+            "user" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/user.svg"
+            ))),
+            "wrench" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/wrench.svg"
+            ))),
+            "x" => Some(include_bytes!(concat!(
+                "../../../assets/icon-packs/",
+                $dir,
+                "/icons/x.svg"
+            ))),
+            _ => None,
+        }
+    };
+}
+
+/// Retorna os bytes SVG embutidos de um ícone para um pacote oficial.
+pub fn builtin_icon_svg_bytes(pack_id: &str, icon_key: &str) -> Option<&'static [u8]> {
+    match pack_id {
+        "phosphor-fill" => match_pack_icons!("phosphor-fill", icon_key),
+        "tabler" => match_pack_icons!("tabler", icon_key),
+        "fluent-system" => match_pack_icons!("fluent-system", icon_key),
+        "lucide" | "lucide-dark" => match_pack_icons!("lucide", icon_key),
+        _ => None,
+    }
+}
+
+/// Carrega os bytes SVG de um ícone para qualquer pacote (oficial ou customizado em disco),
+/// usando Lucide como fallback automático quando o ícone não existir no pacote.
+pub fn load_icon_svg_bytes(
+    pack_id: &str,
+    icon_key: &str,
+    user_icon_packs_dir: &Path,
+) -> Option<Vec<u8>> {
+    if let Some(bytes) = builtin_icon_svg_bytes(pack_id, icon_key) {
+        return Some(bytes.to_vec());
+    }
+    if is_valid_pack_id(pack_id) && !icon_key.contains("..") && !icon_key.contains('/') {
+        let custom_path = user_icon_packs_dir
+            .join(pack_id)
+            .join("icons")
+            .join(format!("{icon_key}.svg"));
+        if let Ok(raw) = std::fs::read(&custom_path) {
+            return Some(raw);
+        }
+        // Também tenta localizar pelo campo `id` no manifest de subpastas customizadas
+        for pack in discover_icon_packs(user_icon_packs_dir) {
+            if pack.id == pack_id {
+                if let Some(dir) = pack.icons_dir {
+                    if let Ok(raw) = std::fs::read(dir.join(format!("{icon_key}.svg"))) {
+                        return Some(raw);
+                    }
+                }
+            }
+        }
+    }
+    builtin_icon_svg_bytes(DEFAULT_ICON_PACK_ID, icon_key).map(|b| b.to_vec())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IconPackManifest {
