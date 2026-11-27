@@ -1,0 +1,32 @@
+schema_version = 1
+
+[metadata]
+id = "warm-paper"
+name = "Warm Paper"
+version = "1.0.0"
+description = "Soft linen light surfaces with terracotta accents."
+base = "crab-light"
+
+[colors]
+background = "#f4efe6"
+surface = "#fbf8f2"
+surface_elevated = "#ece5d8"
+border = "#d8cebe"
+border_subtle = "#e5ddd0"
+accent = "#c95d32"
+accent_hover = "#db6c40"
+accent_pressed = "#b04c25"
+accent_muted = "#c95d3222"
+accent_foreground = "#fffaf5"
+text_primary = "#2a2520"
+text_secondary = "#6b6258"
+text_disabled = "#a3998d"
+hover = "#e7dfd2"
+pressed = "#ddd4c5"
+danger = "#c84646"
+success = "#3d8254"
+warning = "#bd7f1f"
+console_bg = "#efe9de"
+
+[geometry]
+border_radius = 4

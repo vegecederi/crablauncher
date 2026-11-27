@@ -1,0 +1,32 @@
+schema_version = 1
+
+[metadata]
+id = "evergreen"
+name = "Evergreen"
+version = "1.0.0"
+description = "Deep pine surfaces with crisp emerald highlights."
+base = "crab-dark"
+
+[colors]
+background = "#141a17"
+surface = "#1b231f"
+surface_elevated = "#232e29"
+border = "#2f3d36"
+border_subtle = "#25312b"
+accent = "#4ec98b"
+accent_hover = "#62d69b"
+accent_pressed = "#3cb076"
+accent_muted = "#4ec98b24"
+accent_foreground = "#0f1713"
+text_primary = "#edf3ef"
+text_secondary = "#95a89e"
+text_disabled = "#5c6d64"
+hover = "#293630"
+pressed = "#1e2823"
+danger = "#df5a5a"
+success = "#4ec98b"
+warning = "#e6b85c"
+console_bg = "#101512"
+
+[geometry]
+border_radius = 4

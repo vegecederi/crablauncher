@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "fluent-system",
+  "name": "Fluent System",
+  "author": "Microsoft Fluent",
+  "version": "1.0.0",
+  "description": "Rounded, modern system icons from Microsoft Fluent UI.",
+  "preserve_colors": false
+}

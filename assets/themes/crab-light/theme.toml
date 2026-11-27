@@ -3,9 +3,8 @@ schema_version = 1
 [metadata]
 id = "crab-light"
 name = "Crab Light"
-author = "Crab Team"
 version = "1.0.0"
-description = "Clean, minimalist light theme with Crab's signature orange accent."
+description = "Clean light theme with warm orange accents."
 
 [colors]
 background = "#f5f5f5"

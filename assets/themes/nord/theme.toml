@@ -3,9 +3,8 @@ schema_version = 1
 [metadata]
 id = "nord"
 name = "Nord"
-author = "Crab Team"
 version = "1.0.0"
-description = "Arctic, north-bluish color palette with calm contrast."
+description = "Arctic slate palette with calm frost accents."
 base = "crab-dark"
 
 [colors]

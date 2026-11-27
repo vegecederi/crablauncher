@@ -3,9 +3,8 @@ schema_version = 1
 [metadata]
 id = "legacy"
 name = "Legacy"
-author = "Crab Team"
 version = "1.0.0"
-description = "Nostalgic Alpha & Beta inspired mossy earth palette."
+description = "Mossy earth tones inspired by classic Minecraft."
 base = "crab-dark"
 
 [colors]

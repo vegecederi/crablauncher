@@ -3,9 +3,8 @@ schema_version = 1
 [metadata]
 id = "amoled"
 name = "AMOLED"
-author = "Crab Team"
 version = "1.0.0"
-description = "Pure black theme designed for AMOLED and OLED displays, featuring minimal surfaces and Crab's signature orange accent."
+description = "Pure black OLED surfaces with orange accents."
 base = "crab-dark"
 
 [colors]

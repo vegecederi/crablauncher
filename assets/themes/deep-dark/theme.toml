@@ -3,9 +3,8 @@ schema_version = 1
 [metadata]
 id = "deep-dark"
 name = "Deep Dark"
-author = "Crab Team"
 version = "1.0.0"
-description = "Subterranean Ancient City palette with sculk teal highlights."
+description = "Dark sculk palette with teal highlights."
 base = "crab-dark"
 
 [colors]

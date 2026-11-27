@@ -27,7 +27,8 @@ Crab Launcher is an independent reimplementation of Prism Launcher, rebuilt from
 - **Automatic Java Management**: Auto-detects local Java runtimes and downloads managed runtimes from Mojang, Adoptium, Azul, or IBM Semeru.
 - **Themes & Icon Packs**: Full theme engine with official light, dark, and special themes, custom theme import, and Lucide-based icon packs.
 - **Account Management**: Microsoft authentication (Device Code Flow) with secure system keyring storage, plus offline accounts.
-- **Advanced Instance Customization**: Per-instance memory, JVM presets, custom arguments, worlds/servers/screenshots/logs management, and Linux performance tweaks (GameMode, MangoHud, Zink, GPU selection).
+- **Advanced Instance Customization**: Per-instance memory, custom arguments, worlds/servers/screenshots/logs management, and Linux performance tweaks (GameMode, MangoHud, Zink, GPU selection).
+- **Modpack Instances**: Browse and install Modrinth modpacks, or import a local Modrinth (`.mrpack` or `.zip`) or standard Prism/MultiMC instance export (`.zip`).
 - **Legacy Minecraft Support**: Compatible with Alpha, Beta, legacy, and modern Minecraft versions.
 - **Customizable Settings**: Click & Apply settings persistence, custom folder paths, console history controls, and configurable download concurrency, retries, and HTTP timeouts.
 

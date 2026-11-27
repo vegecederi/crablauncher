@@ -3,9 +3,8 @@ schema_version = 1
 [metadata]
 id = "vice"
 name = "Vice"
-author = "Crab Team"
 version = "1.0.0"
-description = "Special tropical sunset theme inspired by Vice City, with translucent surfaces and wallpaper."
+description = "Tropical sunset palette with translucent surfaces."
 
 [colors]
 background = "#191522"

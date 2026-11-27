@@ -4,6 +4,7 @@
 # Local tests and agent guidelines
 /tests/
 /AGENTS.md
+/TODO.md
 
 # IDE, editor and local tooling files
 /.vscode/

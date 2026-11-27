@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "tabler",
+  "name": "Tabler",
+  "author": "Tabler Icons",
+  "version": "1.0.0",
+  "description": "Crisp, geometric outline icon pack from Tabler Icons.",
+  "preserve_colors": false
+}
